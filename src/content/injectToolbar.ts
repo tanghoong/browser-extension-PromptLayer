@@ -468,9 +468,13 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
     }
 
     showNotification(shadow, 'success', '✓ Prompt enhanced successfully!');
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Enhancement error:', error);
-    showNotification(shadow, 'error', error.userMessage || 'Failed to enhance prompt');
+    const errorMessage =
+      error instanceof Error && 'userMessage' in error
+        ? (error as { userMessage?: string }).userMessage
+        : 'Failed to enhance prompt';
+    showNotification(shadow, 'error', errorMessage || 'Failed to enhance prompt');
   } finally {
     if (enhanceBtn) {
       enhanceBtn.disabled = false;
@@ -490,15 +494,28 @@ async function handleSavePrompt(shadow: ShadowRoot): Promise<void> {
     return;
   }
 
-  // Prompt for title
+  // Prompt for title with validation
   const title = prompt('Enter a title for this prompt:');
   if (!title) return;
 
+  // Sanitize title - remove potential HTML/script tags
+  const sanitizedTitle = title.trim().replace(/<[^>]*>/g, '');
+
+  if (sanitizedTitle.length === 0) {
+    showNotification(shadow, 'error', 'Title cannot be empty');
+    return;
+  }
+
+  if (sanitizedTitle.length > 200) {
+    showNotification(shadow, 'error', 'Title is too long (max 200 characters)');
+    return;
+  }
+
   try {
     await storageService.savePrompt({
-      id: `prompt_${Date.now()}`,
-      title: title.trim(),
-      content: promptInput.value,
+      id: `prompt_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      title: sanitizedTitle,
+      content: promptInput.value.trim(),
       tags: [],
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -506,9 +523,13 @@ async function handleSavePrompt(shadow: ShadowRoot): Promise<void> {
     });
 
     showNotification(shadow, 'success', '✓ Prompt saved to library!');
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Save error:', error);
-    showNotification(shadow, 'error', error.userMessage || 'Failed to save prompt');
+    const errorMessage =
+      error instanceof Error && 'userMessage' in error
+        ? (error as { userMessage?: string }).userMessage
+        : 'Failed to save prompt';
+    showNotification(shadow, 'error', errorMessage || 'Failed to save prompt');
   }
 }
 
@@ -675,7 +696,7 @@ function escapeHtml(text: string): string {
 }
 
 /**
- * Show notification
+ * Show notification with XSS protection
  */
 function showNotification(shadow: ShadowRoot, type: string, message: string): void {
   const notificationArea = shadow.querySelector('#notification-area');
@@ -683,7 +704,12 @@ function showNotification(shadow: ShadowRoot, type: string, message: string): vo
 
   const notification = document.createElement('div');
   notification.className = `notification ${type}`;
-  notification.innerHTML = `<span>${message}</span>`;
+
+  // Create span element and set textContent to prevent XSS
+  const span = document.createElement('span');
+  span.textContent = message;
+  notification.appendChild(span);
+
   notification.style.opacity = '0';
 
   notificationArea.appendChild(notification);

@@ -38,6 +38,35 @@ const DEFAULT_STATS: UsageStats = {
  * Storage service class
  */
 class StorageService {
+  private saveOperationTimestamps: number[] = [];
+  private readonly MAX_SAVES_PER_MINUTE = 30;
+  private readonly RATE_LIMIT_WINDOW = 60000; // 1 minute
+
+  /**
+   * Check rate limiting for storage operations
+   */
+  private checkSaveRateLimit(): void {
+    const now = Date.now();
+    const windowStart = now - this.RATE_LIMIT_WINDOW;
+
+    // Remove timestamps outside the current window
+    this.saveOperationTimestamps = this.saveOperationTimestamps.filter(
+      (timestamp) => timestamp > windowStart
+    );
+
+    // Check if we've exceeded the rate limit
+    if (this.saveOperationTimestamps.length >= this.MAX_SAVES_PER_MINUTE) {
+      throw new PromptLayerError(
+        ErrorType.UNKNOWN_ERROR,
+        'Rate limit exceeded',
+        'Too many save operations. Please wait a moment before saving again.'
+      );
+    }
+
+    // Add current operation timestamp
+    this.saveOperationTimestamps.push(now);
+  }
+
   /**
    * Encrypt a string (API keys) using XOR with a derived key
    * Note: This provides obfuscation, not true encryption. For better security,
@@ -184,10 +213,13 @@ class StorageService {
   }
 
   /**
-   * Save a new prompt
+   * Save a new prompt with rate limiting
    */
   async savePrompt(prompt: Prompt): Promise<void> {
     try {
+      // Check rate limit
+      this.checkSaveRateLimit();
+
       const prompts = await this.getPrompts();
 
       // Check storage quota (warn at 400, max at 500)

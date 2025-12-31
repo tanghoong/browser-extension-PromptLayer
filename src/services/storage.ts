@@ -33,6 +33,10 @@ const DEFAULT_STATS: UsageStats = {
   totalApiCalls: 0,
   averageEnhancementTime: 0,
   lastResetDate: new Date(),
+  totalTokensUsed: 0,
+  totalCostUSD: 0,
+  monthlyCostUSD: 0,
+  currentMonth: new Date().toISOString().slice(0, 7),
 };
 
 /**

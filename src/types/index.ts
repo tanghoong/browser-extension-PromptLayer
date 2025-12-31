@@ -9,13 +9,13 @@ export interface Prompt {
   id: string;
   title: string;
   content: string;
-  roleId: string;
   tags: string[];
-  version: number;
-  history: PromptVersion[];
   createdAt: Date;
   updatedAt: Date;
   usageCount: number;
+  lastUsed?: Date;
+  category?: string;
+  isFavorite?: boolean;
 }
 
 /**
@@ -130,6 +130,10 @@ export interface UsageStats {
   totalApiCalls: number;
   averageEnhancementTime: number;
   lastResetDate: Date;
+  totalTokensUsed: number;
+  totalCostUSD: number;
+  monthlyCostUSD: number;
+  currentMonth: string;
 }
 
 /**

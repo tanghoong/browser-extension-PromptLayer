@@ -26,6 +26,16 @@ const REQUEST_TIMEOUT = 30000;
 const MAX_RETRIES = 3;
 
 /**
+ * OpenAI API pricing per 1M tokens (as of 2024)
+ */
+const PRICING = {
+  'gpt-4o-mini': { input: 0.15, output: 0.60 },
+  'gpt-4o': { input: 2.50, output: 10.00 },
+  'gpt-4': { input: 30.00, output: 60.00 },
+  'gpt-3.5-turbo': { input: 0.50, output: 1.50 },
+};
+
+/**
  * OpenAI client class
  */
 class OpenAIClient {
@@ -197,6 +207,16 @@ class OpenAIClient {
         );
       }
 
+      // Track token usage and cost
+      const usage = data.usage;
+      if (usage) {
+        await this.trackUsage(
+          usage.prompt_tokens || 0,
+          usage.completion_tokens || 0,
+          params.model || this.config.model
+        );
+      }
+
       return content;
     } catch (error) {
       if (error instanceof PromptLayerError) {
@@ -216,6 +236,44 @@ class OpenAIClient {
         'Network error',
         'Could not connect to OpenAI. Please check your internet connection.'
       );
+    }
+  }
+
+  /**
+   * Track token usage and calculate cost
+   */
+  private async trackUsage(
+    promptTokens: number,
+    completionTokens: number,
+    model: string
+  ): Promise<void> {
+    try {
+      const stats = await storageService.getStats();
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      
+      // Reset monthly cost if new month
+      if (stats.currentMonth !== currentMonth) {
+        stats.monthlyCostUSD = 0;
+        stats.currentMonth = currentMonth;
+      }
+
+      // Calculate cost based on model pricing
+      const pricing = PRICING[model as keyof typeof PRICING] || PRICING['gpt-4o-mini'];
+      const inputCost = (promptTokens / 1000000) * pricing.input;
+      const outputCost = (completionTokens / 1000000) * pricing.output;
+      const totalCost = inputCost + outputCost;
+
+      // Update stats
+      await storageService.updateStats({
+        totalTokensUsed: stats.totalTokensUsed + promptTokens + completionTokens,
+        totalCostUSD: stats.totalCostUSD + totalCost,
+        monthlyCostUSD: stats.monthlyCostUSD + totalCost,
+        currentMonth,
+      });
+
+      console.log(`[PromptLayer] Tokens: ${promptTokens + completionTokens}, Cost: $${totalCost.toFixed(6)}`);
+    } catch (error) {
+      console.error('Error tracking usage:', error);
     }
   }
 

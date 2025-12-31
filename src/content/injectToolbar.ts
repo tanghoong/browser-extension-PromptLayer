@@ -3,6 +3,9 @@
  * Handles injection of PromptLayer toolbar into ChatGPT page
  */
 
+import { promptEnhancer } from '../services/promptEnhancer';
+import { storageService } from '../services/storage';
+
 let toolbarInjected = false;
 let shadowRoot: ShadowRoot | null = null;
 
@@ -20,10 +23,14 @@ export async function injectToolbar(): Promise<void> {
     // Create container for shadow DOM
     const container = document.createElement('div');
     container.id = 'promptlayer-container';
-    container.style.position = 'relative';
+    container.style.position = 'fixed';
+    container.style.top = '0';
+    container.style.left = '0';
     container.style.width = '100%';
+    container.style.height = '0';
     container.style.zIndex = '999999';
-    container.style.pointerEvents = 'none'; // Allow clicks to pass through container
+    container.style.pointerEvents = 'none';
+    container.style.boxSizing = 'border-box';
 
     // Create shadow root for CSS isolation
     shadowRoot = container.attachShadow({ mode: 'open' });
@@ -335,21 +342,234 @@ function setupButtons(shadow: ShadowRoot): void {
   const libraryPanel = shadow.querySelector('#prompt-library');
   const libraryClose = shadow.querySelector('.library-close');
 
-  enhanceBtn?.addEventListener('click', () => {
-    showNotification(shadow, 'info', 'Enhancement feature coming soon! Configure your API key first.');
-  });
-
-  saveBtn?.addEventListener('click', () => {
-    showNotification(shadow, 'info', 'Save feature coming soon!');
-  });
+  enhanceBtn?.addEventListener('click', () => handleEnhance(shadow));
+  saveBtn?.addEventListener('click', () => handleSavePrompt(shadow));
 
   libraryBtn?.addEventListener('click', () => {
     libraryPanel?.classList.toggle('open');
+    if (libraryPanel?.classList.contains('open')) {
+      loadPromptLibrary(shadow);
+    }
   });
 
   libraryClose?.addEventListener('click', () => {
     libraryPanel?.classList.remove('open');
   });
+}
+
+/**
+ * Handle enhance button click
+ */
+async function handleEnhance(shadow: ShadowRoot): Promise<void> {
+  const promptInput = shadow.querySelector<HTMLTextAreaElement>('#prompt-input');
+  const roleSelect = shadow.querySelector<HTMLSelectElement>('#role-select');
+  const enhanceBtn = shadow.querySelector<HTMLButtonElement>('#enhance-btn');
+  
+  if (!promptInput || !promptInput.value.trim()) {
+    showNotification(shadow, 'error', 'Please enter a prompt to enhance');
+    return;
+  }
+
+  // Check API key
+  const result = await chrome.storage.local.get('promptlayer_api_key');
+  if (!result.promptlayer_api_key) {
+    showNotification(shadow, 'error', 'Please configure your OpenAI API key first');
+    return;
+  }
+
+  // Show loading state
+  const originalText = enhanceBtn?.textContent || 'Enhance';
+  if (enhanceBtn) {
+    enhanceBtn.disabled = true;
+    enhanceBtn.textContent = '⏳ Enhancing...';
+  }
+
+  try {
+    console.log('[PromptLayer] Starting enhancement...');
+    console.log('[PromptLayer] Raw prompt:', promptInput.value);
+    console.log('[PromptLayer] Role:', roleSelect?.value);
+    
+    const enhanced = await promptEnhancer.enhance({
+      rawPrompt: promptInput.value,
+      roleId: roleSelect?.value || 'general-assistant',
+      context: ''
+    });
+
+    console.log('[PromptLayer] Enhancement response:', enhanced);
+    console.log('[PromptLayer] Full text:', enhanced.fullText);
+
+    // Use fullText if available, otherwise construct from parts
+    const enhancedText = enhanced.fullText || 
+      `${enhanced.role}\n\n${enhanced.objective}\n\nConstraints:\n${enhanced.constraints.join('\n')}\n\nOutput Format:\n${enhanced.outputFormat}`;
+    
+    console.log('[PromptLayer] Final enhanced text:', enhancedText);
+    promptInput.value = enhancedText;
+
+    // Update character counter
+    const charCounter = shadow.querySelector<HTMLElement>('#char-counter');
+    if (charCounter) {
+      charCounter.textContent = `${enhancedText.length} / 10000`;
+    }
+
+    showNotification(shadow, 'success', '✓ Prompt enhanced successfully!');
+  } catch (error: any) {
+    console.error('Enhancement error:', error);
+    showNotification(shadow, 'error', error.userMessage || 'Failed to enhance prompt');
+  } finally {
+    if (enhanceBtn) {
+      enhanceBtn.disabled = false;
+      enhanceBtn.textContent = originalText;
+    }
+  }
+}
+
+/**
+ * Handle save prompt
+ */
+async function handleSavePrompt(shadow: ShadowRoot): Promise<void> {
+  const promptInput = shadow.querySelector<HTMLTextAreaElement>('#prompt-input');
+  
+  if (!promptInput || !promptInput.value.trim()) {
+    showNotification(shadow, 'error', 'No prompt to save');
+    return;
+  }
+
+  // Prompt for title
+  const title = prompt('Enter a title for this prompt:');
+  if (!title) return;
+
+  try {
+    await storageService.savePrompt({
+      id: `prompt_${Date.now()}`,
+      title: title.trim(),
+      content: promptInput.value,
+      tags: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      usageCount: 0
+    });
+
+    showNotification(shadow, 'success', '✓ Prompt saved to library!');
+  } catch (error: any) {
+    console.error('Save error:', error);
+    showNotification(shadow, 'error', error.userMessage || 'Failed to save prompt');
+  }
+}
+
+/**
+ * Load and display prompt library
+ */
+async function loadPromptLibrary(shadow: ShadowRoot): Promise<void> {
+  try {
+    const prompts = await storageService.getPrompts();
+
+    const libraryList = shadow.querySelector('#library-list');
+    if (!libraryList) return;
+
+    if (prompts.length === 0) {
+      libraryList.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--pl-text-secondary);">No saved prompts yet</div>';
+      return;
+    }
+
+    libraryList.innerHTML = prompts.map(prompt => `
+      <div class="library-item" data-prompt-id="${prompt.id}">
+        <div class="library-item-header">
+          <strong>${escapeHtml(prompt.title)}</strong>
+          <div class="library-item-actions">
+            <button class="library-load-btn" data-prompt-id="${prompt.id}" title="Load">📄</button>
+            <button class="library-delete-btn" data-prompt-id="${prompt.id}" title="Delete">🗑️</button>
+          </div>
+        </div>
+        <div class="library-item-preview">${escapeHtml(prompt.content.substring(0, 100))}${prompt.content.length > 100 ? '...' : ''}</div>
+        <div class="library-item-meta">
+          ${new Date(prompt.createdAt).toLocaleDateString()} • Used ${prompt.usageCount} times
+        </div>
+      </div>
+    `).join('');
+
+    // Add event listeners
+    libraryList.querySelectorAll('.library-load-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = (e.target as HTMLElement).dataset.promptId;
+        if (id) loadPromptToInput(shadow, id);
+      });
+    });
+
+    libraryList.querySelectorAll('.library-delete-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = (e.target as HTMLElement).dataset.promptId;
+        if (id) deletePrompt(shadow, id);
+      });
+    });
+  } catch (error) {
+    console.error('Error loading library:', error);
+    showNotification(shadow, 'error', 'Failed to load prompt library');
+  }
+}
+
+/**
+ * Load a prompt from library to input
+ */
+async function loadPromptToInput(shadow: ShadowRoot, promptId: string): Promise<void> {
+  try {
+    const prompt = await storageService.getPrompt(promptId);
+    
+    if (!prompt) {
+      showNotification(shadow, 'error', 'Prompt not found');
+      return;
+    }
+
+    const promptInput = shadow.querySelector<HTMLTextAreaElement>('#prompt-input');
+    if (promptInput) {
+      promptInput.value = prompt.content;
+      
+      // Update character counter
+      const charCounter = shadow.querySelector<HTMLElement>('#char-counter');
+      if (charCounter) {
+        charCounter.textContent = `${prompt.content.length} / 10000`;
+      }
+    }
+
+    // Update usage stats
+    await storageService.updatePrompt(promptId, {
+      usageCount: prompt.usageCount + 1
+    });
+
+    // Close library panel
+    const libraryPanel = shadow.querySelector('#prompt-library');
+    libraryPanel?.classList.remove('open');
+
+    showNotification(shadow, 'success', '✓ Prompt loaded');
+  } catch (error) {
+    console.error('Error loading prompt:', error);
+    showNotification(shadow, 'error', 'Failed to load prompt');
+  }
+}
+
+/**
+ * Delete a prompt from library
+ */
+async function deletePrompt(shadow: ShadowRoot, promptId: string): Promise<void> {
+  if (!confirm('Are you sure you want to delete this prompt?')) return;
+
+  try {
+    await storageService.deletePrompt(promptId);
+    
+    showNotification(shadow, 'success', '✓ Prompt deleted');
+    loadPromptLibrary(shadow); // Refresh library
+  } catch (error) {
+    console.error('Error deleting prompt:', error);
+    showNotification(shadow, 'error', 'Failed to delete prompt');
+  }
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 /**
@@ -393,6 +613,19 @@ function setupCollapseBehavior(shadow: ShadowRoot): void {
       collapseBtn.textContent = isCollapsed ? '▼' : '▲';
     });
   }
+
+  // Show toolbar when mouse near top of screen
+  document.addEventListener('mousemove', (e) => {
+    if (e.clientY < 10 && toolbar?.classList.contains('hidden')) {
+      toolbar.classList.remove('hidden');
+    }
+  });
+
+  // Add double-click on header to toggle visibility
+  const header = shadow.querySelector('.toolbar-header');
+  header?.addEventListener('dblclick', () => {
+    toolbar?.classList.toggle('hidden');
+  });
 }
 
 /**
@@ -445,16 +678,32 @@ function applyTheme(shadow: ShadowRoot): void {
   const toolbar = shadow.querySelector('#promptlayer-toolbar');
   if (!toolbar) return;
 
-  // Check system preference
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  // Check ChatGPT's theme by inspecting background color
+  const htmlBg = window.getComputedStyle(document.documentElement).backgroundColor;
+  const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+  
+  // Check if background is dark (rgb values < 128)
+  const isDarkBg = (bg: string) => {
+    const match = bg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)/);
+    if (match) {
+      const [, r, g, b] = match.map(Number);
+      return (r + g + b) / 3 < 128;
+    }
+    return false;
+  };
   
   // Check ChatGPT's theme (look for dark mode class on body/html)
   const chatGPTDark = document.documentElement.classList.contains('dark') ||
-                      document.body.classList.contains('dark');
+                      document.body.classList.contains('dark') ||
+                      isDarkBg(htmlBg) ||
+                      isDarkBg(bodyBg);
 
+  // Check system preference as fallback
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const isDark = chatGPTDark || prefersDark;
   
   toolbar.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  console.log('[PromptLayer] Theme applied:', isDark ? 'dark' : 'light');
 }
 
 /**

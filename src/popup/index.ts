@@ -26,7 +26,19 @@ async function loadStats() {
       enhancementsPerformed: 0,
       totalApiCalls: 0,
       averageEnhancementTime: 0,
+      totalTokensUsed: 0,
+      totalCostUSD: 0,
+      monthlyCostUSD: 0,
+      currentMonth: new Date().toISOString().slice(0, 7),
     };
+
+    // Check if we need to reset monthly cost
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    if (statsData.currentMonth !== currentMonth) {
+      statsData.monthlyCostUSD = 0;
+      statsData.currentMonth = currentMonth;
+      await chrome.storage.local.set({ promptlayer_stats: statsData });
+    }
 
     const enhancementsCount = document.getElementById('enhancements-count');
     if (enhancementsCount) {
@@ -42,6 +54,22 @@ async function loadStats() {
     if (avgTime) {
       const timeInSeconds = ((statsData.averageEnhancementTime || 0) / 1000).toFixed(1);
       avgTime.textContent = `${timeInSeconds}s`;
+    }
+
+    // Display cost information
+    const monthlyCost = document.getElementById('monthly-cost');
+    if (monthlyCost) {
+      monthlyCost.textContent = `$${(statsData.monthlyCostUSD || 0).toFixed(4)}`;
+    }
+
+    const totalTokens = document.getElementById('total-tokens');
+    if (totalTokens) {
+      totalTokens.textContent = (statsData.totalTokensUsed || 0).toLocaleString();
+    }
+
+    const totalCost = document.getElementById('total-cost');
+    if (totalCost) {
+      totalCost.textContent = `$${(statsData.totalCostUSD || 0).toFixed(4)}`;
     }
   } catch (error) {
     console.error('Error loading stats:', error);

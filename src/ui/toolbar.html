@@ -45,6 +45,7 @@
         placeholder="Enter your rough prompt idea here... (e.g., 'Write about AI')"
         aria-label="Prompt input"
         rows="4"
+        maxlength="10000"
       ></textarea>
     </div>
 
@@ -153,8 +154,8 @@
     </div>
   </div>
 
-  <!-- Prompt Library Panel (hidden by default) -->
-  <div id="prompt-library" class="library-panel hidden" role="complementary" aria-label="Prompt Library">
+  <!-- Prompt Library Panel (off-screen by default) -->
+  <div id="prompt-library" class="library-panel" role="complementary" aria-label="Prompt Library">
     <div class="library-header">
       <h2>Prompt Library</h2>
       <button class="library-close" aria-label="Close library">&times;</button>

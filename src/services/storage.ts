@@ -39,12 +39,26 @@ const DEFAULT_STATS: UsageStats = {
  */
 class StorageService {
   /**
-   * Encrypt a string (basic obfuscation for API keys)
+   * Encrypt a string (API keys) using XOR with a derived key
+   * Note: This provides obfuscation, not true encryption. For better security,
+   * consider using chrome.storage.session which is more secure.
    */
   private encrypt(value: string): string {
-    // Simple base64 encoding for now
-    // In production, consider using Web Crypto API
-    return btoa(value);
+    // Use a combination of extension ID and a fixed salt for key derivation
+    const salt = 'promptlayer-2024';
+    const extensionId = chrome.runtime.id || 'default';
+    const key = `${extensionId}-${salt}`;
+
+    // XOR encryption with rotating key
+    let encrypted = '';
+    for (let i = 0; i < value.length; i++) {
+      const keyChar = key.charCodeAt(i % key.length);
+      const valueChar = value.charCodeAt(i);
+      encrypted += String.fromCharCode(valueChar ^ keyChar);
+    }
+
+    // Base64 encode to make it storable
+    return btoa(encrypted);
   }
 
   /**
@@ -52,9 +66,25 @@ class StorageService {
    */
   private decrypt(value: string): string {
     try {
-      return atob(value);
+      // Base64 decode first
+      const decoded = atob(value);
+
+      // Use same key derivation
+      const salt = 'promptlayer-2024';
+      const extensionId = chrome.runtime.id || 'default';
+      const key = `${extensionId}-${salt}`;
+
+      // XOR decryption (same operation as encryption for XOR)
+      let decrypted = '';
+      for (let i = 0; i < decoded.length; i++) {
+        const keyChar = key.charCodeAt(i % key.length);
+        const valueChar = decoded.charCodeAt(i);
+        decrypted += String.fromCharCode(valueChar ^ keyChar);
+      }
+
+      return decrypted;
     } catch {
-      return value; // Return as-is if decryption fails
+      return value; // Return as-is if decryption fails (backward compatibility)
     }
   }
 

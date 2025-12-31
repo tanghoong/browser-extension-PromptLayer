@@ -37,9 +37,9 @@ const PRICING = {
  */
 class OpenAIClient {
   private config: OpenAIConfig | null = null;
-  private requestCount = 0;
-  private lastRequestTime = 0;
+  private requestTimestamps: number[] = [];
   private readonly MAX_REQUESTS_PER_MINUTE = 50;
+  private readonly RATE_LIMIT_WINDOW = 60000; // 1 minute in ms
 
   /**
    * Initialize the client with configuration
@@ -65,19 +65,19 @@ class OpenAIClient {
   }
 
   /**
-   * Check rate limiting
+   * Check rate limiting using sliding window algorithm
    */
   private checkRateLimit(): void {
     const now = Date.now();
-    const timeSinceLastRequest = now - this.lastRequestTime;
+    const windowStart = now - this.RATE_LIMIT_WINDOW;
 
-    // Reset counter if more than a minute has passed
-    if (timeSinceLastRequest > 60000) {
-      this.requestCount = 0;
-    }
+    // Remove timestamps outside the current window
+    this.requestTimestamps = this.requestTimestamps.filter((timestamp) => timestamp > windowStart);
 
-    if (this.requestCount >= this.MAX_REQUESTS_PER_MINUTE) {
-      const waitTime = Math.ceil((60000 - timeSinceLastRequest) / 1000);
+    // Check if we've exceeded the rate limit
+    if (this.requestTimestamps.length >= this.MAX_REQUESTS_PER_MINUTE) {
+      const oldestRequest = this.requestTimestamps[0];
+      const waitTime = Math.ceil((oldestRequest + this.RATE_LIMIT_WINDOW - now) / 1000);
       throw new PromptLayerError(
         ErrorType.API_RATE_LIMIT,
         'Rate limit exceeded',
@@ -85,8 +85,8 @@ class OpenAIClient {
       );
     }
 
-    this.requestCount++;
-    this.lastRequestTime = now;
+    // Add current request timestamp
+    this.requestTimestamps.push(now);
   }
 
   /**

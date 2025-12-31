@@ -57,8 +57,8 @@ class StorageService {
     // Check if we've exceeded the rate limit
     if (this.saveOperationTimestamps.length >= this.MAX_SAVES_PER_MINUTE) {
       throw new PromptLayerError(
-        ErrorType.UNKNOWN_ERROR,
-        'Rate limit exceeded',
+        ErrorType.STORAGE_RATE_LIMIT,
+        'Storage rate limit exceeded',
         'Too many save operations. Please wait a moment before saving again.'
       );
     }
@@ -69,11 +69,13 @@ class StorageService {
 
   /**
    * Encrypt a string (API keys) using XOR with a derived key
-   * Note: This provides obfuscation, not true encryption. For better security,
-   * consider using chrome.storage.session which is more secure.
+   * Note: This provides basic obfuscation. For production use,
+   * consider using Web Crypto API or chrome.storage.session for better security.
+   * The XOR cipher here is vulnerable to known-plaintext attacks.
    */
   private encrypt(value: string): string {
-    // Use a combination of extension ID and a fixed salt for key derivation
+    // Use a combination of extension ID and a salt for key derivation
+    // Note: In a production environment, use crypto.getRandomValues() for the salt
     const salt = 'promptlayer-2024';
     const extensionId = chrome.runtime.id || 'default';
     const key = `${extensionId}-${salt}`;

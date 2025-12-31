@@ -7,6 +7,10 @@ import { promptEnhancer } from '../services/promptEnhancer';
 import { storageService } from '../services/storage';
 import { debounce } from '../utils/helpers';
 
+// Constants
+const MIN_API_KEY_LENGTH = 48; // OpenAI API keys are typically 51+ characters
+const MAX_PROMPT_TITLE_LENGTH = 200;
+
 let toolbarInjected = false;
 let shadowRoot: ShadowRoot | null = null;
 let themeObserver: MutationObserver | null = null;
@@ -263,9 +267,13 @@ function setupSettings(shadow: ShadowRoot): void {
       return;
     }
 
-    // Check minimum length (OpenAI keys are typically 48+ characters)
-    if (apiKey.length < 40) {
-      showNotification(shadow, 'error', 'API key seems too short. Please check your key.');
+    // Check minimum length (OpenAI keys are typically 51+ characters)
+    if (apiKey.length < MIN_API_KEY_LENGTH) {
+      showNotification(
+        shadow,
+        'error',
+        `API key seems too short. Expected at least ${MIN_API_KEY_LENGTH} characters.`
+      );
       return;
     }
 
@@ -506,14 +514,24 @@ async function handleSavePrompt(shadow: ShadowRoot): Promise<void> {
     return;
   }
 
-  if (sanitizedTitle.length > 200) {
-    showNotification(shadow, 'error', 'Title is too long (max 200 characters)');
+  if (sanitizedTitle.length > MAX_PROMPT_TITLE_LENGTH) {
+    showNotification(
+      shadow,
+      'error',
+      `Title is too long (max ${MAX_PROMPT_TITLE_LENGTH} characters)`
+    );
     return;
   }
 
   try {
+    // Use crypto.randomUUID() if available, fallback to timestamp + random
+    const uniqueId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? `prompt_${crypto.randomUUID()}`
+        : `prompt_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+
     await storageService.savePrompt({
-      id: `prompt_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      id: uniqueId,
       title: sanitizedTitle,
       content: promptInput.value.trim(),
       tags: [],
@@ -559,9 +577,9 @@ async function loadPromptLibrary(shadow: ShadowRoot): Promise<void> {
       );
     }
 
-    // Apply role filter (if prompts have category field)
+    // Apply role filter (only if category exists and matches)
     if (roleFilter) {
-      prompts = prompts.filter((prompt) => prompt.category === roleFilter);
+      prompts = prompts.filter((prompt) => prompt.category && prompt.category === roleFilter);
     }
 
     // Apply sorting
@@ -889,13 +907,23 @@ function watchThemeChanges(shadow: ShadowRoot): void {
  * Remove toolbar (cleanup)
  */
 export function removeToolbar(): void {
-  // Clean up all event listeners
-  eventCleanupFunctions.forEach((cleanup) => cleanup());
+  // Clean up all event listeners with error handling
+  eventCleanupFunctions.forEach((cleanup) => {
+    try {
+      cleanup();
+    } catch (error) {
+      console.warn('[PromptLayer] Cleanup function failed:', error);
+    }
+  });
   eventCleanupFunctions = [];
 
   // Disconnect theme observer
   if (themeObserver) {
-    themeObserver.disconnect();
+    try {
+      themeObserver.disconnect();
+    } catch (error) {
+      console.warn('[PromptLayer] Theme observer disconnect failed:', error);
+    }
     themeObserver = null;
   }
 

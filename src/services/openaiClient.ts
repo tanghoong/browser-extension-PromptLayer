@@ -23,7 +23,10 @@ const REQUEST_TIMEOUT = 30000;
 const MAX_RETRIES = 3;
 
 /**
- * OpenAI API pricing per 1M tokens (as of 2024)
+ * OpenAI API pricing per 1M tokens (as of December 2024)
+ * Note: These prices may change over time. Update this data periodically.
+ * Last updated: December 2024
+ * Source: https://openai.com/api/pricing/
  */
 const PRICING = {
   'gpt-4o-mini': { input: 0.15, output: 0.6 },

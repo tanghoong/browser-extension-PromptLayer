@@ -93,7 +93,7 @@ async function initializeToolbar(shadow: ShadowRoot): Promise<void> {
 
   // Check if first-time user
   const isFirstTime = await checkFirstTimeUser();
-  
+
   // Collapse toolbar by default
   toolbar.classList.add('collapsed');
   const collapseBtn = shadow.querySelector('#collapse-btn');
@@ -112,10 +112,10 @@ async function initializeToolbar(shadow: ShadowRoot): Promise<void> {
   setupSettings(shadow);
   setupPromptInput(shadow);
   setupButtons(shadow);
-  
+
   // Detect and apply theme
   applyTheme(shadow);
-  
+
   // Watch for theme changes
   watchThemeChanges(shadow);
 }
@@ -162,7 +162,7 @@ function showWelcomeMessage(shadow: ShadowRoot): void {
   // Add event listeners
   const expandBtn = welcome.querySelector('#welcome-expand-btn');
   const closeBtn = welcome.querySelector('#welcome-close-btn');
-  
+
   expandBtn?.addEventListener('click', () => {
     toolbar.classList.remove('collapsed');
     const collapseBtn = shadow.querySelector('#collapse-btn');
@@ -251,7 +251,7 @@ function setupSettings(shadow: ShadowRoot): void {
           model: modelSelect?.value || 'gpt-4o-mini',
           temperature: parseFloat(tempSlider?.value || '0.3'),
           maxTokens: 800,
-        }
+        },
       });
 
       showNotification(shadow, 'success', '✓ Settings saved successfully!');
@@ -283,7 +283,7 @@ function setupSettings(shadow: ShadowRoot): void {
 async function loadSettings(shadow: ShadowRoot): Promise<void> {
   try {
     const result = await chrome.storage.local.get(['promptlayer_api_key', 'promptlayer_settings']);
-    
+
     const apiKeyInput = shadow.querySelector<HTMLInputElement>('#api-key-input');
     const modelSelect = shadow.querySelector<HTMLSelectElement>('#model-select');
     const tempSlider = shadow.querySelector<HTMLInputElement>('#temperature-slider');
@@ -364,7 +364,7 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
   const promptInput = shadow.querySelector<HTMLTextAreaElement>('#prompt-input');
   const roleSelect = shadow.querySelector<HTMLSelectElement>('#role-select');
   const enhanceBtn = shadow.querySelector<HTMLButtonElement>('#enhance-btn');
-  
+
   if (!promptInput || !promptInput.value.trim()) {
     showNotification(shadow, 'error', 'Please enter a prompt to enhance');
     return;
@@ -388,20 +388,21 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
     console.log('[PromptLayer] Starting enhancement...');
     console.log('[PromptLayer] Raw prompt:', promptInput.value);
     console.log('[PromptLayer] Role:', roleSelect?.value);
-    
+
     const enhanced = await promptEnhancer.enhance({
       rawPrompt: promptInput.value,
       roleId: roleSelect?.value || 'general-assistant',
-      context: ''
+      context: '',
     });
 
     console.log('[PromptLayer] Enhancement response:', enhanced);
     console.log('[PromptLayer] Full text:', enhanced.fullText);
 
     // Use fullText if available, otherwise construct from parts
-    const enhancedText = enhanced.fullText || 
+    const enhancedText =
+      enhanced.fullText ||
       `${enhanced.role}\n\n${enhanced.objective}\n\nConstraints:\n${enhanced.constraints.join('\n')}\n\nOutput Format:\n${enhanced.outputFormat}`;
-    
+
     console.log('[PromptLayer] Final enhanced text:', enhancedText);
     promptInput.value = enhancedText;
 
@@ -428,7 +429,7 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
  */
 async function handleSavePrompt(shadow: ShadowRoot): Promise<void> {
   const promptInput = shadow.querySelector<HTMLTextAreaElement>('#prompt-input');
-  
+
   if (!promptInput || !promptInput.value.trim()) {
     showNotification(shadow, 'error', 'No prompt to save');
     return;
@@ -446,7 +447,7 @@ async function handleSavePrompt(shadow: ShadowRoot): Promise<void> {
       tags: [],
       createdAt: new Date(),
       updatedAt: new Date(),
-      usageCount: 0
+      usageCount: 0,
     });
 
     showNotification(shadow, 'success', '✓ Prompt saved to library!');
@@ -467,11 +468,14 @@ async function loadPromptLibrary(shadow: ShadowRoot): Promise<void> {
     if (!libraryList) return;
 
     if (prompts.length === 0) {
-      libraryList.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--pl-text-secondary);">No saved prompts yet</div>';
+      libraryList.innerHTML =
+        '<div style="padding: 20px; text-align: center; color: var(--pl-text-secondary);">No saved prompts yet</div>';
       return;
     }
 
-    libraryList.innerHTML = prompts.map(prompt => `
+    libraryList.innerHTML = prompts
+      .map(
+        (prompt) => `
       <div class="library-item" data-prompt-id="${prompt.id}">
         <div class="library-item-header">
           <strong>${escapeHtml(prompt.title)}</strong>
@@ -485,17 +489,19 @@ async function loadPromptLibrary(shadow: ShadowRoot): Promise<void> {
           ${new Date(prompt.createdAt).toLocaleDateString()} • Used ${prompt.usageCount} times
         </div>
       </div>
-    `).join('');
+    `
+      )
+      .join('');
 
     // Add event listeners
-    libraryList.querySelectorAll('.library-load-btn').forEach(btn => {
+    libraryList.querySelectorAll('.library-load-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         const id = (e.target as HTMLElement).dataset.promptId;
         if (id) loadPromptToInput(shadow, id);
       });
     });
 
-    libraryList.querySelectorAll('.library-delete-btn').forEach(btn => {
+    libraryList.querySelectorAll('.library-delete-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         const id = (e.target as HTMLElement).dataset.promptId;
         if (id) deletePrompt(shadow, id);
@@ -513,7 +519,7 @@ async function loadPromptLibrary(shadow: ShadowRoot): Promise<void> {
 async function loadPromptToInput(shadow: ShadowRoot, promptId: string): Promise<void> {
   try {
     const prompt = await storageService.getPrompt(promptId);
-    
+
     if (!prompt) {
       showNotification(shadow, 'error', 'Prompt not found');
       return;
@@ -522,7 +528,7 @@ async function loadPromptToInput(shadow: ShadowRoot, promptId: string): Promise<
     const promptInput = shadow.querySelector<HTMLTextAreaElement>('#prompt-input');
     if (promptInput) {
       promptInput.value = prompt.content;
-      
+
       // Update character counter
       const charCounter = shadow.querySelector<HTMLElement>('#char-counter');
       if (charCounter) {
@@ -532,7 +538,7 @@ async function loadPromptToInput(shadow: ShadowRoot, promptId: string): Promise<
 
     // Update usage stats
     await storageService.updatePrompt(promptId, {
-      usageCount: prompt.usageCount + 1
+      usageCount: prompt.usageCount + 1,
     });
 
     // Close library panel
@@ -554,7 +560,7 @@ async function deletePrompt(shadow: ShadowRoot, promptId: string): Promise<void>
 
   try {
     await storageService.deletePrompt(promptId);
-    
+
     showNotification(shadow, 'success', '✓ Prompt deleted');
     loadPromptLibrary(shadow); // Refresh library
   } catch (error) {
@@ -681,7 +687,7 @@ function applyTheme(shadow: ShadowRoot): void {
   // Check ChatGPT's theme by inspecting background color
   const htmlBg = window.getComputedStyle(document.documentElement).backgroundColor;
   const bodyBg = window.getComputedStyle(document.body).backgroundColor;
-  
+
   // Check if background is dark (rgb values < 128)
   const isDarkBg = (bg: string) => {
     const match = bg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)/);
@@ -691,17 +697,18 @@ function applyTheme(shadow: ShadowRoot): void {
     }
     return false;
   };
-  
+
   // Check ChatGPT's theme (look for dark mode class on body/html)
-  const chatGPTDark = document.documentElement.classList.contains('dark') ||
-                      document.body.classList.contains('dark') ||
-                      isDarkBg(htmlBg) ||
-                      isDarkBg(bodyBg);
+  const chatGPTDark =
+    document.documentElement.classList.contains('dark') ||
+    document.body.classList.contains('dark') ||
+    isDarkBg(htmlBg) ||
+    isDarkBg(bodyBg);
 
   // Check system preference as fallback
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const isDark = chatGPTDark || prefersDark;
-  
+
   toolbar.setAttribute('data-theme', isDark ? 'dark' : 'light');
   console.log('[PromptLayer] Theme applied:', isDark ? 'dark' : 'light');
 }

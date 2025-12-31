@@ -3,11 +3,7 @@
  * Core logic for transforming rough prompts into structured, high-quality prompts
  */
 
-import type {
-  EnhanceInput,
-  EnhancedPrompt,
-  ChatMessage,
-} from '../types';
+import type { EnhanceInput, EnhancedPrompt, ChatMessage } from '../types';
 import { ErrorType, PromptLayerError } from '../types';
 import { openAIClient } from './openaiClient';
 import { getRoleBlueprint } from './roleBlueprints';
@@ -28,9 +24,13 @@ class PromptEnhancer {
     // Parse sections
     for (const line of lines) {
       const trimmed = line.trim();
-      
+
       // Check for section headers
-      if (trimmed.match(/^(ROLE|OBJECTIVE|CONSTRAINTS?|OUTPUT FORMAT|TONE & STYLE|KEYWORD STRATEGY|EEAT REQUIREMENTS|CONTENT STRUCTURE|CONTEXT|STAKEHOLDERS|SUCCESS CRITERIA):?$/i)) {
+      if (
+        trimmed.match(
+          /^(ROLE|OBJECTIVE|CONSTRAINTS?|OUTPUT FORMAT|TONE & STYLE|KEYWORD STRATEGY|EEAT REQUIREMENTS|CONTENT STRUCTURE|CONTEXT|STAKEHOLDERS|SUCCESS CRITERIA):?$/i
+        )
+      ) {
         currentSection = trimmed.replace(':', '').toUpperCase();
         sections[currentSection] = [];
       } else if (trimmed && currentSection) {
@@ -45,7 +45,17 @@ class PromptEnhancer {
     const outputFormat = sections['OUTPUT FORMAT']?.join('\n') || '';
 
     // Collect all constraint-related sections
-    ['CONSTRAINTS', 'CONSTRAINT', 'TONE & STYLE', 'KEYWORD STRATEGY', 'EEAT REQUIREMENTS', 'CONTENT STRUCTURE', 'CONTEXT', 'STAKEHOLDERS', 'SUCCESS CRITERIA'].forEach((key) => {
+    [
+      'CONSTRAINTS',
+      'CONSTRAINT',
+      'TONE & STYLE',
+      'KEYWORD STRATEGY',
+      'EEAT REQUIREMENTS',
+      'CONTENT STRUCTURE',
+      'CONTEXT',
+      'STAKEHOLDERS',
+      'SUCCESS CRITERIA',
+    ].forEach((key) => {
       if (sections[key]) {
         constraints.push(...sections[key]);
       }
@@ -65,7 +75,7 @@ class PromptEnhancer {
    */
   private buildSystemMessage(roleId: string): string {
     const blueprint = getRoleBlueprint(roleId);
-    
+
     if (!blueprint) {
       // Fallback to generic enhancement if role not found
       return `You are an expert prompt engineer. Transform the user's rough prompt into a clear, structured, and effective prompt.
@@ -92,7 +102,8 @@ Be precise, remove ambiguity, and optimize for quality results.`;
       message += `\n\n---\nCONTEXT:\n${input.context}\n---`;
     }
 
-    message += '\n\nProvide the enhanced prompt with clear sections (ROLE, OBJECTIVE, CONSTRAINTS, OUTPUT FORMAT).';
+    message +=
+      '\n\nProvide the enhanced prompt with clear sections (ROLE, OBJECTIVE, CONSTRAINTS, OUTPUT FORMAT).';
 
     return message;
   }
@@ -147,7 +158,7 @@ Be precise, remove ambiguity, and optimize for quality results.`;
       const endTime = Date.now();
       const enhancementTime = endTime - startTime;
       const stats = await storageService.getStats();
-      
+
       await storageService.updateStats({
         enhancementsPerformed: stats.enhancementsPerformed + 1,
         totalApiCalls: stats.totalApiCalls + 1,

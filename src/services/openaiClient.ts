@@ -3,10 +3,7 @@
  * Handles all communication with OpenAI API
  */
 
-import type {
-  OpenAIConfig,
-  ChatCompletionParams,
-} from '../types';
+import type { OpenAIConfig, ChatCompletionParams } from '../types';
 import { ErrorType, PromptLayerError } from '../types';
 import { storageService } from './storage';
 
@@ -29,10 +26,10 @@ const MAX_RETRIES = 3;
  * OpenAI API pricing per 1M tokens (as of 2024)
  */
 const PRICING = {
-  'gpt-4o-mini': { input: 0.15, output: 0.60 },
-  'gpt-4o': { input: 2.50, output: 10.00 },
-  'gpt-4': { input: 30.00, output: 60.00 },
-  'gpt-3.5-turbo': { input: 0.50, output: 1.50 },
+  'gpt-4o-mini': { input: 0.15, output: 0.6 },
+  'gpt-4o': { input: 2.5, output: 10.0 },
+  'gpt-4': { input: 30.0, output: 60.0 },
+  'gpt-3.5-turbo': { input: 0.5, output: 1.5 },
 };
 
 /**
@@ -126,10 +123,7 @@ class OpenAIClient {
   /**
    * Make API request with retries
    */
-  private async makeRequest(
-    params: ChatCompletionParams,
-    retryCount = 0
-  ): Promise<string> {
+  private async makeRequest(params: ChatCompletionParams, retryCount = 0): Promise<string> {
     if (!this.config) {
       await this.initialize();
     }
@@ -165,7 +159,7 @@ class OpenAIClient {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        
+
         if (response.status === 401) {
           throw new PromptLayerError(
             ErrorType.API_KEY_INVALID,
@@ -250,7 +244,7 @@ class OpenAIClient {
     try {
       const stats = await storageService.getStats();
       const currentMonth = new Date().toISOString().slice(0, 7);
-      
+
       // Reset monthly cost if new month
       if (stats.currentMonth !== currentMonth) {
         stats.monthlyCostUSD = 0;
@@ -271,7 +265,9 @@ class OpenAIClient {
         currentMonth,
       });
 
-      console.log(`[PromptLayer] Tokens: ${promptTokens + completionTokens}, Cost: $${totalCost.toFixed(6)}`);
+      console.log(
+        `[PromptLayer] Tokens: ${promptTokens + completionTokens}, Cost: $${totalCost.toFixed(6)}`
+      );
     } catch (error) {
       console.error('Error tracking usage:', error);
     }

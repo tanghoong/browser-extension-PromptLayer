@@ -77,7 +77,11 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 /**
  * Download text as file
  */
-export function downloadAsFile(content: string, filename: string, mimeType = 'application/json'): void {
+export function downloadAsFile(
+  content: string,
+  filename: string,
+  mimeType = 'application/json'
+): void {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

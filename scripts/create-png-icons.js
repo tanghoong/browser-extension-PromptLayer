@@ -14,7 +14,7 @@ const create1x1PNG = () => {
 const createColoredPNG = (size) => {
   // This is a basic approach - for production, use a proper image library
   // For now, we'll create a simple solid color PNG
-  
+
   // Minimal PNG header for a solid color image
   // This creates a very basic green square
   const baseData = create1x1PNG();
@@ -24,7 +24,7 @@ const createColoredPNG = (size) => {
 const iconsDir = path.join(__dirname, '..', 'public', 'icons');
 
 // Create PNG files
-[16, 48, 128].forEach(size => {
+[16, 48, 128].forEach((size) => {
   const pngData = createColoredPNG(size);
   const filename = path.join(iconsDir, `icon-${size}.png`);
   fs.writeFileSync(filename, pngData);

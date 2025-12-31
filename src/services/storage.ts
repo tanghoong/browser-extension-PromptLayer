@@ -3,12 +3,7 @@
  * Handles all data persistence for prompts, settings, roles, and API keys
  */
 
-import type {
-  Prompt,
-  ExtensionSettings,
-  RoleBlueprint,
-  UsageStats,
-} from '../types';
+import type { Prompt, ExtensionSettings, RoleBlueprint, UsageStats } from '../types';
 import { StorageKey, ErrorType, PromptLayerError } from '../types';
 
 /**
@@ -164,7 +159,7 @@ class StorageService {
   async savePrompt(prompt: Prompt): Promise<void> {
     try {
       const prompts = await this.getPrompts();
-      
+
       // Check storage quota (warn at 400, max at 500)
       if (prompts.length >= 500) {
         throw new PromptLayerError(
@@ -355,7 +350,10 @@ class StorageService {
   /**
    * Import data from JSON
    */
-  async importData(jsonData: string, mergeStrategy: 'replace' | 'merge' = 'merge'): Promise<{
+  async importData(
+    jsonData: string,
+    mergeStrategy: 'replace' | 'merge' = 'merge'
+  ): Promise<{
     promptsImported: number;
     rolesImported: number;
   }> {
@@ -373,7 +371,7 @@ class StorageService {
           const existingPrompts = await this.getPrompts();
           const existingIds = new Set(existingPrompts.map((p) => p.id));
           const newPrompts = importData.prompts.filter((p: Prompt) => !existingIds.has(p.id));
-          
+
           await chrome.storage.local.set({
             [StorageKey.PROMPTS]: [...existingPrompts, ...newPrompts],
           });

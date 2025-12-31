@@ -1,0 +1,154 @@
+/**
+ * Popup UI Styles
+ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #2d2d2d;
+  background: #ffffff;
+  min-width: 320px;
+}
+
+.popup-container {
+  width: 350px;
+}
+
+.popup-header {
+  background: linear-gradient(135deg, #10a37f 0%, #0e8968 100%);
+  color: white;
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.popup-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.version {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.popup-content {
+  padding: 16px;
+}
+
+h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-section,
+.stats-section,
+.actions-section {
+  margin-bottom: 20px;
+}
+
+.status-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.status-item:last-child {
+  border-bottom: none;
+}
+
+.status-value {
+  font-weight: 500;
+  color: #10a37f;
+}
+
+.stats-section {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.stat-item {
+  text-align: center;
+  padding: 12px;
+  background: #f7f7f8;
+  border-radius: 8px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: #2d2d2d;
+}
+
+.actions-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.btn-primary {
+  background: #10a37f;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #0e8968;
+}
+
+.btn-secondary {
+  background: #f7f7f8;
+  color: #2d2d2d;
+}
+
+.btn-secondary:hover {
+  background: #ececf1;
+}
+
+.links-section {
+  display: flex;
+  justify-content: space-around;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.links-section a {
+  color: #10a37f;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.links-section a:hover {
+  text-decoration: underline;
+}

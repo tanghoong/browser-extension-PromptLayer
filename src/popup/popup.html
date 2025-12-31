@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PromptLayer</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="popup-header">
+      <h1>PromptLayer</h1>
+      <span class="version">v1.0.0</span>
+    </div>
+
+    <div class="popup-content">
+      <div class="status-section">
+        <h2>Status</h2>
+        <div class="status-item">
+          <span>API Key:</span>
+          <span id="api-key-status" class="status-value">Not configured</span>
+        </div>
+        <div class="status-item">
+          <span>Prompts Saved:</span>
+          <span id="prompts-count" class="status-value">0</span>
+        </div>
+      </div>
+
+      <div class="stats-section">
+        <h2>Usage Stats</h2>
+        <div class="stat-item">
+          <div class="stat-label">Enhancements</div>
+          <div id="enhancements-count" class="stat-value">0</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">API Calls</div>
+          <div id="api-calls-count" class="stat-value">0</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Avg. Time</div>
+          <div id="avg-time" class="stat-value">0s</div>
+        </div>
+      </div>
+
+      <div class="actions-section">
+        <button id="open-chatgpt-btn" class="btn btn-primary">
+          Open ChatGPT
+        </button>
+        <button id="reset-stats-btn" class="btn btn-secondary">
+          Reset Stats
+        </button>
+      </div>
+
+      <div class="links-section">
+        <a href="https://github.com/yourusername/browser-extension-PromptLayer" target="_blank">GitHub</a>
+        <a href="https://github.com/yourusername/browser-extension-PromptLayer/issues" target="_blank">Report Issue</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

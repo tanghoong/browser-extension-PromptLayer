@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<div id="promptlayer-toolbar" data-theme="light" role="region" aria-label="PromptLayer Toolbar">
+  <!-- Header -->
+  <div class="toolbar-header">
+    <div class="toolbar-title">
+      <svg class="toolbar-logo" width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+        <path d="M10 2L3 7v6l7 5 7-5V7l-7-5zm0 2.5L14.5 7.5v5L10 15.5l-4.5-3v-5L10 4.5z"/>
+      </svg>
+      <span>PromptLayer</span>
+    </div>
+    <div class="toolbar-actions">
+      <button id="settings-btn" class="icon-btn" aria-label="Settings" title="Settings">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 10a2 2 0 100-4 2 2 0 000 4zM14 7h-1.07a6.01 6.01 0 00-.57-1.38l.76-.76-1.42-1.42-.76.76A6.01 6.01 0 009.56 3.07V2h-2v1.07a6.01 6.01 0 00-1.38.57l-.76-.76-1.42 1.42.76.76A6.01 6.01 0 003.07 7H2v2h1.07a6.01 6.01 0 00.57 1.38l-.76.76 1.42 1.42.76-.76A6.01 6.01 0 007.44 12.93V14h2v-1.07a6.01 6.01 0 001.38-.57l.76.76 1.42-1.42-.76-.76A6.01 6.01 0 0012.93 9H14V7z"/>
+        </svg>
+      </button>
+      <button id="collapse-btn" class="icon-btn" aria-label="Collapse toolbar" title="Collapse">▲</button>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="toolbar-content">
+    <!-- Role Selector -->
+    <div class="form-group">
+      <label for="role-select">Role Blueprint</label>
+      <select id="role-select" aria-label="Select role blueprint">
+        <option value="engineer">🛠️ Engineer</option>
+        <option value="writer">✍️ Writer</option>
+        <option value="seo-aeo-geo">📊 SEO/AEO/GEO</option>
+        <option value="product-manager">📋 Product Manager</option>
+      </select>
+    </div>
+
+    <!-- Prompt Input -->
+    <div class="form-group">
+      <label for="prompt-input">
+        Your Prompt
+        <span id="char-counter" class="char-counter">0 / 10000</span>
+      </label>
+      <textarea 
+        id="prompt-input" 
+        placeholder="Enter your rough prompt idea here... (e.g., 'Write about AI')"
+        aria-label="Prompt input"
+        rows="4"
+      ></textarea>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="button-group">
+      <button id="enhance-btn" class="btn btn-primary" aria-label="Enhance prompt">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M9.5 2l1.5 3 3.5.5-2.5 2.5.5 3.5-3-1.5-3 1.5.5-3.5L4 5.5 7.5 5 9 2h.5z"/>
+        </svg>
+        Enhance
+        <span class="keyboard-hint">Ctrl+E</span>
+      </button>
+      <button id="save-btn" class="btn btn-secondary" aria-label="Save prompt">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M13 2H3v12h10V2zm-1 11H4V3h8v10zM6 5h4v1H6V5zm0 2h4v1H6V7z"/>
+        </svg>
+        Save
+        <span class="keyboard-hint">Ctrl+S</span>
+      </button>
+      <button id="library-btn" class="btn btn-secondary" aria-label="Open prompt library">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M3 2h10v12H3V2zm1 1v10h8V3H4zm1 2h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z"/>
+        </svg>
+        Library
+        <span class="keyboard-hint">Ctrl+L</span>
+      </button>
+    </div>
+
+    <!-- Enhanced Output (initially hidden) -->
+    <div id="enhanced-output" class="enhanced-output hidden" role="region" aria-live="polite">
+      <div class="output-header">
+        <h3>Enhanced Prompt</h3>
+        <div class="output-actions">
+          <button id="copy-btn" class="icon-btn" aria-label="Copy to clipboard" title="Copy">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M4 2h8v2H4V2zm0 3h8v9H4V5zm9-3v12H3V2h10z"/>
+            </svg>
+          </button>
+          <button id="insert-btn" class="btn btn-sm btn-primary" aria-label="Insert into ChatGPT">
+            Insert into ChatGPT
+          </button>
+        </div>
+      </div>
+      <div id="enhanced-content" class="output-content"></div>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loading-state" class="loading-state hidden" role="status" aria-live="polite">
+      <div class="spinner"></div>
+      <span>Enhancing your prompt...</span>
+    </div>
+
+    <!-- Notification Area -->
+    <div id="notification-area" class="notification-area" role="alert" aria-live="assertive"></div>
+  </div>
+
+  <!-- Settings Modal (hidden by default) -->
+  <div id="settings-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="settings-title">Settings</h2>
+        <button class="modal-close" aria-label="Close settings">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="api-key-input">OpenAI API Key</label>
+          <div class="input-with-toggle">
+            <input 
+              type="password" 
+              id="api-key-input" 
+              placeholder="sk-..."
+              aria-label="OpenAI API key"
+            />
+            <button id="toggle-api-key" class="icon-btn" aria-label="Show/hide API key">👁️</button>
+          </div>
+          <small>Your API key is stored securely and never transmitted except to OpenAI.</small>
+        </div>
+        <div class="form-group">
+          <label for="model-select">Model</label>
+          <select id="model-select" aria-label="Select OpenAI model">
+            <option value="gpt-4o-mini">GPT-4o Mini (Fast, Affordable)</option>
+            <option value="gpt-4o">GPT-4o (Balanced)</option>
+            <option value="gpt-4-turbo">GPT-4 Turbo (Most Capable)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="temperature-slider">
+            Temperature: <span id="temperature-value">0.3</span>
+          </label>
+          <input 
+            type="range" 
+            id="temperature-slider" 
+            min="0" 
+            max="1" 
+            step="0.1" 
+            value="0.3"
+            aria-label="Temperature setting"
+          />
+          <small>Lower = more deterministic, Higher = more creative</small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="clear-api-key-btn" class="btn btn-danger">Clear API Key</button>
+        <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Prompt Library Panel (hidden by default) -->
+  <div id="prompt-library" class="library-panel hidden" role="complementary" aria-label="Prompt Library">
+    <div class="library-header">
+      <h2>Prompt Library</h2>
+      <button class="library-close" aria-label="Close library">&times;</button>
+    </div>
+    <div class="library-search">
+      <input 
+        type="text" 
+        id="library-search-input" 
+        placeholder="Search prompts..."
+        aria-label="Search prompts"
+      />
+    </div>
+    <div class="library-filters">
+      <select id="library-filter-role" aria-label="Filter by role">
+        <option value="">All Roles</option>
+        <option value="engineer">Engineer</option>
+        <option value="writer">Writer</option>
+        <option value="seo-aeo-geo">SEO/AEO/GEO</option>
+        <option value="product-manager">Product Manager</option>
+      </select>
+      <select id="library-sort" aria-label="Sort prompts">
+        <option value="recent">Most Recent</option>
+        <option value="name">Name (A-Z)</option>
+        <option value="usage">Most Used</option>
+      </select>
+    </div>
+    <div id="library-content" class="library-content">
+      <!-- Prompt cards will be inserted here -->
+      <div class="library-empty">
+        <p>No saved prompts yet.</p>
+        <p>Enhance and save prompts to build your library!</p>
+      </div>
+    </div>
+  </div>
+</div>

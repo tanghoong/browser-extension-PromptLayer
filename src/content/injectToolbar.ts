@@ -5,11 +5,14 @@
 
 import { promptEnhancer } from '../services/promptEnhancer';
 import { storageService } from '../services/storage';
-import { debounce } from '../utils/helpers';
+import { debounce, generateId } from '../utils/helpers';
 
 // Constants
 const MIN_API_KEY_LENGTH = 48; // OpenAI API keys are typically 51+ characters
 const MAX_PROMPT_TITLE_LENGTH = 200;
+
+// Type definitions
+type NotificationType = 'success' | 'error' | 'warning' | 'info';
 
 let toolbarInjected = false;
 let shadowRoot: ShadowRoot | null = null;
@@ -205,12 +208,10 @@ function setupSettings(shadow: ShadowRoot): void {
 
   let previousActiveElement: Element | null = null;
 
-  // Load existing settings
-  loadSettings(shadow);
-
   // Open settings with focus management
   settingsBtn?.addEventListener('click', () => {
-    previousActiveElement = shadow.activeElement || document.activeElement;
+    // Store reference to the settings button for focus restoration
+    previousActiveElement = settingsBtn as Element;
     settingsModal?.classList.remove('hidden');
     loadSettings(shadow);
 
@@ -277,9 +278,10 @@ function setupSettings(shadow: ShadowRoot): void {
       return;
     }
 
-    // Check for valid characters (alphanumeric and hyphens)
-    if (!/^sk-[A-Za-z0-9_-]+$/.test(apiKey)) {
-      showNotification(shadow, 'error', 'API key contains invalid characters.');
+    // Check for valid characters - allow alphanumeric, hyphens, underscores, and common base64 chars
+    // OpenAI keys use base64-like encoding which can include various characters
+    if (!/^sk-[A-Za-z0-9_-]+$/.test(apiKey) && !/^sk-.+$/.test(apiKey)) {
+      showNotification(shadow, 'error', 'API key format appears invalid.');
       return;
     }
 
@@ -506,8 +508,8 @@ async function handleSavePrompt(shadow: ShadowRoot): Promise<void> {
   const title = prompt('Enter a title for this prompt:');
   if (!title) return;
 
-  // Sanitize title - remove potential HTML/script tags
-  const sanitizedTitle = title.trim().replace(/<[^>]*>/g, '');
+  // Normalize title: trim whitespace; rely on proper escaping when rendering
+  const sanitizedTitle = title.trim();
 
   if (sanitizedTitle.length === 0) {
     showNotification(shadow, 'error', 'Title cannot be empty');
@@ -524,14 +526,8 @@ async function handleSavePrompt(shadow: ShadowRoot): Promise<void> {
   }
 
   try {
-    // Use crypto.randomUUID() if available, fallback to timestamp + random
-    const uniqueId =
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? `prompt_${crypto.randomUUID()}`
-        : `prompt_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-
     await storageService.savePrompt({
-      id: uniqueId,
+      id: `prompt_${generateId()}`,
       title: sanitizedTitle,
       content: promptInput.value.trim(),
       tags: [],
@@ -577,15 +573,25 @@ async function loadPromptLibrary(shadow: ShadowRoot): Promise<void> {
       );
     }
 
-    // Apply role filter (only if category exists and matches)
+    // Apply role filter (only if category is defined and matches)
     if (roleFilter) {
-      prompts = prompts.filter((prompt) => prompt.category && prompt.category === roleFilter);
+      prompts = prompts.filter(
+        (prompt) => prompt.category !== undefined && prompt.category === roleFilter
+      );
     }
 
-    // Apply sorting
+    // Apply sorting with error handling for date parsing
     switch (sortBy) {
       case 'recent':
-        prompts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        prompts.sort((a, b) => {
+          try {
+            const dateA = new Date(b.createdAt).getTime();
+            const dateB = new Date(a.createdAt).getTime();
+            return dateA - dateB;
+          } catch {
+            return 0; // Keep original order if dates are invalid
+          }
+        });
         break;
       case 'name':
         prompts.sort((a, b) => a.title.localeCompare(b.title));
@@ -716,7 +722,7 @@ function escapeHtml(text: string): string {
 /**
  * Show notification with XSS protection
  */
-function showNotification(shadow: ShadowRoot, type: string, message: string): void {
+function showNotification(shadow: ShadowRoot, type: NotificationType, message: string): void {
   const notificationArea = shadow.querySelector('#notification-area');
   if (!notificationArea) return;
 

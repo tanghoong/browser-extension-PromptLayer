@@ -43,9 +43,9 @@ class StorageService {
   private readonly RATE_LIMIT_WINDOW = 60000; // 1 minute
 
   /**
-   * Check rate limiting for storage operations
+   * Check rate limiting for storage write operations
    */
-  private checkSaveRateLimit(): void {
+  private checkWriteRateLimit(): void {
     const now = Date.now();
     const windowStart = now - this.RATE_LIMIT_WINDOW;
 
@@ -59,7 +59,7 @@ class StorageService {
       throw new PromptLayerError(
         ErrorType.STORAGE_RATE_LIMIT,
         'Storage rate limit exceeded',
-        'Too many save operations. Please wait a moment before saving again.'
+        'Too many storage operations. Please wait a moment before trying again.'
       );
     }
 
@@ -80,12 +80,13 @@ class StorageService {
     const extensionId = chrome.runtime.id || 'default';
     const key = `${extensionId}-${salt}`;
 
-    // XOR encryption with rotating key
+    // XOR encryption with rotating key, keeping values in 8-bit range
     let encrypted = '';
     for (let i = 0; i < value.length; i++) {
       const keyChar = key.charCodeAt(i % key.length);
       const valueChar = value.charCodeAt(i);
-      encrypted += String.fromCharCode(valueChar ^ keyChar);
+      // Use bitwise AND with 0xFF to ensure result stays within Latin1 range (0-255)
+      encrypted += String.fromCharCode((valueChar ^ keyChar) & 0xff);
     }
 
     // Base64 encode to make it storable
@@ -105,12 +106,13 @@ class StorageService {
       const extensionId = chrome.runtime.id || 'default';
       const key = `${extensionId}-${salt}`;
 
-      // XOR decryption (same operation as encryption for XOR)
+      // XOR decryption (same operation as encryption for XOR, with 8-bit masking)
       let decrypted = '';
       for (let i = 0; i < decoded.length; i++) {
         const keyChar = key.charCodeAt(i % key.length);
         const valueChar = decoded.charCodeAt(i);
-        decrypted += String.fromCharCode(valueChar ^ keyChar);
+        // Use bitwise AND with 0xFF to ensure result stays within valid range
+        decrypted += String.fromCharCode((valueChar ^ keyChar) & 0xff);
       }
 
       return decrypted;
@@ -138,9 +140,11 @@ class StorageService {
    */
   async setApiKey(apiKey: string): Promise<void> {
     try {
+      this.checkWriteRateLimit();
       const encrypted = this.encrypt(apiKey);
       await chrome.storage.local.set({ [StorageKey.API_KEY]: encrypted });
     } catch (error) {
+      if (error instanceof PromptLayerError) throw error;
       console.error('Error setting API key:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
@@ -180,10 +184,12 @@ class StorageService {
    */
   async updateSettings(updates: Partial<ExtensionSettings>): Promise<void> {
     try {
+      this.checkWriteRateLimit();
       const currentSettings = await this.getSettings();
       const newSettings = { ...currentSettings, ...updates };
       await chrome.storage.local.set({ [StorageKey.SETTINGS]: newSettings });
     } catch (error) {
+      if (error instanceof PromptLayerError) throw error;
       console.error('Error updating settings:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
@@ -220,7 +226,7 @@ class StorageService {
   async savePrompt(prompt: Prompt): Promise<void> {
     try {
       // Check rate limit
-      this.checkSaveRateLimit();
+      this.checkWriteRateLimit();
 
       const prompts = await this.getPrompts();
 
@@ -251,6 +257,7 @@ class StorageService {
    */
   async updatePrompt(id: string, updates: Partial<Prompt>): Promise<void> {
     try {
+      this.checkWriteRateLimit();
       const prompts = await this.getPrompts();
       const index = prompts.findIndex((p) => p.id === id);
 
@@ -280,10 +287,12 @@ class StorageService {
    */
   async deletePrompt(id: string): Promise<void> {
     try {
+      this.checkWriteRateLimit();
       const prompts = await this.getPrompts();
       const filtered = prompts.filter((p) => p.id !== id);
       await chrome.storage.local.set({ [StorageKey.PROMPTS]: filtered });
     } catch (error) {
+      if (error instanceof PromptLayerError) throw error;
       console.error('Error deleting prompt:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,

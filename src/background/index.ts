@@ -11,7 +11,7 @@ console.log('[PromptLayer] Background service worker initialized');
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     console.log('[PromptLayer] Extension installed');
-    
+
     // Open welcome page or setup guide
     // chrome.tabs.create({ url: 'welcome.html' });
   } else if (details.reason === 'update') {
@@ -38,7 +38,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
  */
 chrome.action.onClicked.addListener((tab) => {
   console.log('[PromptLayer] Extension icon clicked', tab);
-  
+
   // Check if on ChatGPT page
   if (tab.url?.includes('chat.openai.com') || tab.url?.includes('chatgpt.com')) {
     // Send message to content script to toggle toolbar

@@ -22,7 +22,7 @@ if (!fs.existsSync(iconsDir)) {
 
 // Save SVG placeholders
 const sizes = [16, 48, 128];
-sizes.forEach(size => {
+sizes.forEach((size) => {
   const svg = svgIcon.replace(/width="128" height="128"/, `width="${size}" height="${size}"`);
   const filename = `icon-${size}.svg`;
   fs.writeFileSync(path.join(iconsDir, filename), svg);

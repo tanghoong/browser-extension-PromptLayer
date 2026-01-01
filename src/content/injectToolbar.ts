@@ -5,9 +5,19 @@
 
 import { promptEnhancer } from '../services/promptEnhancer';
 import { storageService } from '../services/storage';
+import { debounce, generateId } from '../utils/helpers';
+
+// Constants
+const MIN_API_KEY_LENGTH = 48; // OpenAI API keys are typically 51+ characters
+const MAX_PROMPT_TITLE_LENGTH = 200;
+
+// Type definitions
+type NotificationType = 'success' | 'error' | 'warning' | 'info';
 
 let toolbarInjected = false;
 let shadowRoot: ShadowRoot | null = null;
+let themeObserver: MutationObserver | null = null;
+let eventCleanupFunctions: (() => void)[] = [];
 
 /**
  * Create and inject the toolbar
@@ -93,7 +103,7 @@ async function initializeToolbar(shadow: ShadowRoot): Promise<void> {
 
   // Check if first-time user
   const isFirstTime = await checkFirstTimeUser();
-  
+
   // Collapse toolbar by default
   toolbar.classList.add('collapsed');
   const collapseBtn = shadow.querySelector('#collapse-btn');
@@ -112,10 +122,10 @@ async function initializeToolbar(shadow: ShadowRoot): Promise<void> {
   setupSettings(shadow);
   setupPromptInput(shadow);
   setupButtons(shadow);
-  
+
   // Detect and apply theme
   applyTheme(shadow);
-  
+
   // Watch for theme changes
   watchThemeChanges(shadow);
 }
@@ -162,7 +172,7 @@ function showWelcomeMessage(shadow: ShadowRoot): void {
   // Add event listeners
   const expandBtn = welcome.querySelector('#welcome-expand-btn');
   const closeBtn = welcome.querySelector('#welcome-close-btn');
-  
+
   expandBtn?.addEventListener('click', () => {
     toolbar.classList.remove('collapsed');
     const collapseBtn = shadow.querySelector('#collapse-btn');
@@ -183,7 +193,7 @@ function showWelcomeMessage(shadow: ShadowRoot): void {
 }
 
 /**
- * Setup settings modal functionality
+ * Setup settings modal functionality with keyboard accessibility
  */
 function setupSettings(shadow: ShadowRoot): void {
   const settingsBtn = shadow.querySelector('#settings-btn');
@@ -196,24 +206,36 @@ function setupSettings(shadow: ShadowRoot): void {
   const tempSlider = shadow.querySelector<HTMLInputElement>('#temperature-slider');
   const tempValue = shadow.querySelector('#temperature-value');
 
-  // Load existing settings
-  loadSettings(shadow);
+  let previousActiveElement: Element | null = null;
 
-  // Open settings
+  // Open settings with focus management
   settingsBtn?.addEventListener('click', () => {
+    // Store reference to the settings button for focus restoration
+    previousActiveElement = settingsBtn as Element;
     settingsModal?.classList.remove('hidden');
     loadSettings(shadow);
+
+    // Focus first input when modal opens
+    setTimeout(() => {
+      apiKeyInput?.focus();
+    }, 100);
   });
 
-  // Close settings
-  modalClose?.addEventListener('click', () => {
+  // Close settings and restore focus
+  const closeModal = () => {
     settingsModal?.classList.add('hidden');
-  });
+    // Restore focus to the element that opened the modal
+    if (previousActiveElement && previousActiveElement instanceof HTMLElement) {
+      previousActiveElement.focus();
+    }
+  };
+
+  modalClose?.addEventListener('click', closeModal);
 
   // Close on overlay click
   settingsModal?.addEventListener('click', (e) => {
     if (e.target === settingsModal) {
-      settingsModal.classList.add('hidden');
+      closeModal();
     }
   });
 
@@ -240,22 +262,40 @@ function setupSettings(shadow: ShadowRoot): void {
       return;
     }
 
+    // Validate API key format more strictly
     if (!apiKey.startsWith('sk-')) {
-      showNotification(shadow, 'warning', 'API key should start with "sk-"');
+      showNotification(shadow, 'error', 'Invalid API key format. Key should start with "sk-"');
+      return;
+    }
+
+    // Check minimum length (OpenAI keys are typically 51+ characters)
+    if (apiKey.length < MIN_API_KEY_LENGTH) {
+      showNotification(
+        shadow,
+        'error',
+        `API key seems too short. Expected at least ${MIN_API_KEY_LENGTH} characters.`
+      );
+      return;
+    }
+
+    // Basic validation - just ensure it starts with 'sk-' and has reasonable length
+    // Don't be overly restrictive on character set since OpenAI may use various formats
+    if (!apiKey.startsWith('sk-') || apiKey.length < 20) {
+      showNotification(shadow, 'error', 'API key format appears invalid.');
+      return;
     }
 
     try {
-      await chrome.storage.local.set({
-        promptlayer_api_key: btoa(apiKey), // Simple encoding
-        promptlayer_settings: {
-          model: modelSelect?.value || 'gpt-4o-mini',
-          temperature: parseFloat(tempSlider?.value || '0.3'),
-          maxTokens: 800,
-        }
+      // Use storage service for proper encryption
+      await storageService.setApiKey(apiKey);
+      await storageService.updateSettings({
+        model: modelSelect?.value || 'gpt-4o-mini',
+        temperature: parseFloat(tempSlider?.value || '0.3'),
+        maxTokens: 800,
       });
 
       showNotification(shadow, 'success', '✓ Settings saved successfully!');
-      settingsModal?.classList.add('hidden');
+      closeModal();
     } catch (error) {
       console.error('Error saving settings:', error);
       showNotification(shadow, 'error', 'Failed to save settings');
@@ -266,7 +306,7 @@ function setupSettings(shadow: ShadowRoot): void {
   clearApiKeyBtn?.addEventListener('click', async () => {
     if (confirm('Are you sure you want to clear your API key?')) {
       try {
-        await chrome.storage.local.remove('promptlayer_api_key');
+        await storageService.clearApiKey();
         if (apiKeyInput) apiKeyInput.value = '';
         showNotification(shadow, 'success', 'API key cleared');
       } catch (error) {
@@ -282,30 +322,24 @@ function setupSettings(shadow: ShadowRoot): void {
  */
 async function loadSettings(shadow: ShadowRoot): Promise<void> {
   try {
-    const result = await chrome.storage.local.get(['promptlayer_api_key', 'promptlayer_settings']);
-    
+    const apiKey = await storageService.getApiKey();
+    const settings = await storageService.getSettings();
+
     const apiKeyInput = shadow.querySelector<HTMLInputElement>('#api-key-input');
     const modelSelect = shadow.querySelector<HTMLSelectElement>('#model-select');
     const tempSlider = shadow.querySelector<HTMLInputElement>('#temperature-slider');
     const tempValue = shadow.querySelector('#temperature-value');
 
     // Load API key
-    if (result.promptlayer_api_key && apiKeyInput) {
-      try {
-        apiKeyInput.value = atob(result.promptlayer_api_key);
-      } catch {
-        apiKeyInput.value = result.promptlayer_api_key;
-      }
+    if (apiKey && apiKeyInput) {
+      apiKeyInput.value = apiKey;
     }
 
     // Load settings
-    if (result.promptlayer_settings) {
-      const settings = result.promptlayer_settings;
-      if (modelSelect) modelSelect.value = settings.model || 'gpt-4o-mini';
-      if (tempSlider) {
-        tempSlider.value = settings.temperature?.toString() || '0.3';
-        if (tempValue) tempValue.textContent = tempSlider.value;
-      }
+    if (modelSelect) modelSelect.value = settings.model || 'gpt-4o-mini';
+    if (tempSlider) {
+      tempSlider.value = settings.temperature?.toString() || '0.3';
+      if (tempValue) tempValue.textContent = tempSlider.value;
     }
   } catch (error) {
     console.error('Error loading settings:', error);
@@ -313,22 +347,35 @@ async function loadSettings(shadow: ShadowRoot): Promise<void> {
 }
 
 /**
- * Setup prompt input character counter
+ * Setup prompt input character counter with debouncing
  */
 function setupPromptInput(shadow: ShadowRoot): void {
   const promptInput = shadow.querySelector<HTMLTextAreaElement>('#prompt-input');
   const charCounter = shadow.querySelector<HTMLElement>('#char-counter');
 
-  promptInput?.addEventListener('input', () => {
+  if (!promptInput || !charCounter) return;
+
+  // Update character counter immediately for responsive feedback
+  const updateCounter = () => {
     const length = promptInput.value.length;
-    if (charCounter) {
-      charCounter.textContent = `${length} / 10000`;
-      if (length > 9000) {
-        charCounter.style.color = 'var(--pl-danger)';
-      } else {
-        charCounter.style.color = 'var(--pl-text-secondary)';
-      }
+    charCounter.textContent = `${length} / 10000`;
+    if (length > 9000) {
+      charCounter.style.color = 'var(--pl-danger)';
+    } else {
+      charCounter.style.color = 'var(--pl-text-secondary)';
     }
+  };
+
+  // Use immediate update for better UX (character counter should be instant)
+  const handleInput = () => {
+    updateCounter();
+  };
+
+  promptInput.addEventListener('input', handleInput);
+
+  // Add to cleanup
+  eventCleanupFunctions.push(() => {
+    promptInput.removeEventListener('input', handleInput);
   });
 }
 
@@ -341,6 +388,9 @@ function setupButtons(shadow: ShadowRoot): void {
   const libraryBtn = shadow.querySelector('#library-btn');
   const libraryPanel = shadow.querySelector('#prompt-library');
   const libraryClose = shadow.querySelector('.library-close');
+  const librarySearch = shadow.querySelector<HTMLInputElement>('#library-search-input');
+  const libraryFilterRole = shadow.querySelector<HTMLSelectElement>('#library-filter-role');
+  const librarySort = shadow.querySelector<HTMLSelectElement>('#library-sort');
 
   enhanceBtn?.addEventListener('click', () => handleEnhance(shadow));
   saveBtn?.addEventListener('click', () => handleSavePrompt(shadow));
@@ -355,6 +405,21 @@ function setupButtons(shadow: ShadowRoot): void {
   libraryClose?.addEventListener('click', () => {
     libraryPanel?.classList.remove('open');
   });
+
+  // Setup library search and filters with debouncing
+  const debouncedLibraryUpdate = debounce(() => loadPromptLibrary(shadow), 300);
+
+  librarySearch?.addEventListener('input', () => {
+    debouncedLibraryUpdate();
+  });
+
+  libraryFilterRole?.addEventListener('change', () => {
+    loadPromptLibrary(shadow);
+  });
+
+  librarySort?.addEventListener('change', () => {
+    loadPromptLibrary(shadow);
+  });
 }
 
 /**
@@ -364,7 +429,7 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
   const promptInput = shadow.querySelector<HTMLTextAreaElement>('#prompt-input');
   const roleSelect = shadow.querySelector<HTMLSelectElement>('#role-select');
   const enhanceBtn = shadow.querySelector<HTMLButtonElement>('#enhance-btn');
-  
+
   if (!promptInput || !promptInput.value.trim()) {
     showNotification(shadow, 'error', 'Please enter a prompt to enhance');
     return;
@@ -388,20 +453,21 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
     console.log('[PromptLayer] Starting enhancement...');
     console.log('[PromptLayer] Raw prompt:', promptInput.value);
     console.log('[PromptLayer] Role:', roleSelect?.value);
-    
+
     const enhanced = await promptEnhancer.enhance({
       rawPrompt: promptInput.value,
       roleId: roleSelect?.value || 'general-assistant',
-      context: ''
+      context: '',
     });
 
     console.log('[PromptLayer] Enhancement response:', enhanced);
     console.log('[PromptLayer] Full text:', enhanced.fullText);
 
     // Use fullText if available, otherwise construct from parts
-    const enhancedText = enhanced.fullText || 
+    const enhancedText =
+      enhanced.fullText ||
       `${enhanced.role}\n\n${enhanced.objective}\n\nConstraints:\n${enhanced.constraints.join('\n')}\n\nOutput Format:\n${enhanced.outputFormat}`;
-    
+
     console.log('[PromptLayer] Final enhanced text:', enhancedText);
     promptInput.value = enhancedText;
 
@@ -412,9 +478,13 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
     }
 
     showNotification(shadow, 'success', '✓ Prompt enhanced successfully!');
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Enhancement error:', error);
-    showNotification(shadow, 'error', error.userMessage || 'Failed to enhance prompt');
+    const errorMessage =
+      error instanceof Error && 'userMessage' in error
+        ? (error as { userMessage?: string }).userMessage
+        : 'Failed to enhance prompt';
+    showNotification(shadow, 'error', errorMessage || 'Failed to enhance prompt');
   } finally {
     if (enhanceBtn) {
       enhanceBtn.disabled = false;
@@ -428,50 +498,125 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
  */
 async function handleSavePrompt(shadow: ShadowRoot): Promise<void> {
   const promptInput = shadow.querySelector<HTMLTextAreaElement>('#prompt-input');
-  
+
   if (!promptInput || !promptInput.value.trim()) {
     showNotification(shadow, 'error', 'No prompt to save');
     return;
   }
 
-  // Prompt for title
+  // Prompt for title with validation
   const title = prompt('Enter a title for this prompt:');
   if (!title) return;
 
+  // Normalize title: trim whitespace; rely on proper escaping when rendering
+  const sanitizedTitle = title.trim();
+
+  if (sanitizedTitle.length === 0) {
+    showNotification(shadow, 'error', 'Title cannot be empty');
+    return;
+  }
+
+  if (sanitizedTitle.length > MAX_PROMPT_TITLE_LENGTH) {
+    showNotification(
+      shadow,
+      'error',
+      `Title is too long (max ${MAX_PROMPT_TITLE_LENGTH} characters)`
+    );
+    return;
+  }
+
   try {
     await storageService.savePrompt({
-      id: `prompt_${Date.now()}`,
-      title: title.trim(),
-      content: promptInput.value,
+      id: `prompt_${generateId()}`,
+      title: sanitizedTitle,
+      content: promptInput.value.trim(),
       tags: [],
       createdAt: new Date(),
       updatedAt: new Date(),
-      usageCount: 0
+      usageCount: 0,
     });
 
     showNotification(shadow, 'success', '✓ Prompt saved to library!');
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Save error:', error);
-    showNotification(shadow, 'error', error.userMessage || 'Failed to save prompt');
+    const errorMessage =
+      error instanceof Error && 'userMessage' in error
+        ? (error as { userMessage?: string }).userMessage
+        : 'Failed to save prompt';
+    showNotification(shadow, 'error', errorMessage || 'Failed to save prompt');
   }
 }
 
 /**
- * Load and display prompt library
+ * Load and display prompt library with search and filter
  */
 async function loadPromptLibrary(shadow: ShadowRoot): Promise<void> {
   try {
-    const prompts = await storageService.getPrompts();
+    let prompts = await storageService.getPrompts();
 
-    const libraryList = shadow.querySelector('#library-list');
-    if (!libraryList) return;
+    // Get filter values
+    const searchInput = shadow.querySelector<HTMLInputElement>('#library-search-input');
+    const filterRole = shadow.querySelector<HTMLSelectElement>('#library-filter-role');
+    const sortSelect = shadow.querySelector<HTMLSelectElement>('#library-sort');
+
+    const searchTerm = searchInput?.value.toLowerCase() || '';
+    const roleFilter = filterRole?.value || '';
+    const sortBy = sortSelect?.value || 'recent';
+
+    // Apply search filter
+    if (searchTerm) {
+      prompts = prompts.filter(
+        (prompt) =>
+          prompt.title.toLowerCase().includes(searchTerm) ||
+          prompt.content.toLowerCase().includes(searchTerm) ||
+          prompt.tags.some((tag) => tag.toLowerCase().includes(searchTerm))
+      );
+    }
+
+    // Apply role filter (only if category is defined and matches)
+    if (roleFilter) {
+      prompts = prompts.filter(
+        (prompt) => prompt.category !== undefined && prompt.category === roleFilter
+      );
+    }
+
+    // Apply sorting with error handling for date parsing
+    switch (sortBy) {
+      case 'recent':
+        prompts.sort((a, b) => {
+          try {
+            const timeA = new Date(a.createdAt).getTime();
+            const timeB = new Date(b.createdAt).getTime();
+            return timeB - timeA; // Most recent first
+          } catch {
+            return 0; // Keep original order if dates are invalid
+          }
+        });
+        break;
+      case 'name':
+        prompts.sort((a, b) => a.title.localeCompare(b.title));
+        break;
+      case 'usage':
+        prompts.sort((a, b) => b.usageCount - a.usageCount);
+        break;
+    }
+
+    const libraryContent = shadow.querySelector('#library-content');
+    if (!libraryContent) return;
 
     if (prompts.length === 0) {
-      libraryList.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--pl-text-secondary);">No saved prompts yet</div>';
+      const emptyMessage =
+        searchTerm || roleFilter ? 'No prompts match your filters' : 'No saved prompts yet';
+      libraryContent.innerHTML = `<div class="library-empty">
+        <p>${emptyMessage}</p>
+        ${!searchTerm && !roleFilter ? '<p>Enhance and save prompts to build your library!</p>' : ''}
+      </div>`;
       return;
     }
 
-    libraryList.innerHTML = prompts.map(prompt => `
+    libraryContent.innerHTML = prompts
+      .map(
+        (prompt) => `
       <div class="library-item" data-prompt-id="${prompt.id}">
         <div class="library-item-header">
           <strong>${escapeHtml(prompt.title)}</strong>
@@ -485,17 +630,19 @@ async function loadPromptLibrary(shadow: ShadowRoot): Promise<void> {
           ${new Date(prompt.createdAt).toLocaleDateString()} • Used ${prompt.usageCount} times
         </div>
       </div>
-    `).join('');
+    `
+      )
+      .join('');
 
     // Add event listeners
-    libraryList.querySelectorAll('.library-load-btn').forEach(btn => {
+    libraryContent.querySelectorAll('.library-load-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         const id = (e.target as HTMLElement).dataset.promptId;
         if (id) loadPromptToInput(shadow, id);
       });
     });
 
-    libraryList.querySelectorAll('.library-delete-btn').forEach(btn => {
+    libraryContent.querySelectorAll('.library-delete-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         const id = (e.target as HTMLElement).dataset.promptId;
         if (id) deletePrompt(shadow, id);
@@ -513,7 +660,7 @@ async function loadPromptLibrary(shadow: ShadowRoot): Promise<void> {
 async function loadPromptToInput(shadow: ShadowRoot, promptId: string): Promise<void> {
   try {
     const prompt = await storageService.getPrompt(promptId);
-    
+
     if (!prompt) {
       showNotification(shadow, 'error', 'Prompt not found');
       return;
@@ -522,7 +669,7 @@ async function loadPromptToInput(shadow: ShadowRoot, promptId: string): Promise<
     const promptInput = shadow.querySelector<HTMLTextAreaElement>('#prompt-input');
     if (promptInput) {
       promptInput.value = prompt.content;
-      
+
       // Update character counter
       const charCounter = shadow.querySelector<HTMLElement>('#char-counter');
       if (charCounter) {
@@ -532,7 +679,7 @@ async function loadPromptToInput(shadow: ShadowRoot, promptId: string): Promise<
 
     // Update usage stats
     await storageService.updatePrompt(promptId, {
-      usageCount: prompt.usageCount + 1
+      usageCount: prompt.usageCount + 1,
     });
 
     // Close library panel
@@ -554,7 +701,7 @@ async function deletePrompt(shadow: ShadowRoot, promptId: string): Promise<void>
 
   try {
     await storageService.deletePrompt(promptId);
-    
+
     showNotification(shadow, 'success', '✓ Prompt deleted');
     loadPromptLibrary(shadow); // Refresh library
   } catch (error) {
@@ -573,15 +720,20 @@ function escapeHtml(text: string): string {
 }
 
 /**
- * Show notification
+ * Show notification with XSS protection
  */
-function showNotification(shadow: ShadowRoot, type: string, message: string): void {
+function showNotification(shadow: ShadowRoot, type: NotificationType, message: string): void {
   const notificationArea = shadow.querySelector('#notification-area');
   if (!notificationArea) return;
 
   const notification = document.createElement('div');
   notification.className = `notification ${type}`;
-  notification.innerHTML = `<span>${message}</span>`;
+
+  // Create span element and set textContent to prevent XSS
+  const span = document.createElement('span');
+  span.textContent = message;
+  notification.appendChild(span);
+
   notification.style.opacity = '0';
 
   notificationArea.appendChild(notification);
@@ -629,15 +781,20 @@ function setupCollapseBehavior(shadow: ShadowRoot): void {
 }
 
 /**
- * Setup keyboard shortcuts
+ * Setup keyboard shortcuts with improved accessibility
  */
 function setupKeyboardShortcuts(shadow: ShadowRoot): void {
-  document.addEventListener('keydown', (e) => {
+  const handleKeyDown = (e: KeyboardEvent) => {
     // Check if shortcuts are enabled (TODO: load from settings)
     const ctrlOrCmd = e.ctrlKey || e.metaKey;
 
-    // Ctrl/Cmd + E: Focus enhance button
-    if (ctrlOrCmd && e.key === 'e') {
+    // Don't trigger shortcuts if user is typing in an input/textarea
+    const target = e.target as HTMLElement;
+    const isInputField =
+      target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+    // Ctrl/Cmd + E: Focus enhance button (but not in input fields)
+    if (ctrlOrCmd && e.key === 'e' && !isInputField) {
       e.preventDefault();
       const enhanceBtn = shadow.querySelector<HTMLButtonElement>('#enhance-btn');
       enhanceBtn?.click();
@@ -650,8 +807,8 @@ function setupKeyboardShortcuts(shadow: ShadowRoot): void {
       saveBtn?.click();
     }
 
-    // Ctrl/Cmd + L: Toggle library
-    if (ctrlOrCmd && e.key === 'l') {
+    // Ctrl/Cmd + L: Toggle library (but not in input fields)
+    if (ctrlOrCmd && e.key === 'l' && !isInputField) {
       e.preventDefault();
       const libraryBtn = shadow.querySelector<HTMLButtonElement>('#library-btn');
       libraryBtn?.click();
@@ -661,13 +818,23 @@ function setupKeyboardShortcuts(shadow: ShadowRoot): void {
     if (e.key === 'Escape') {
       const library = shadow.querySelector('#prompt-library');
       const settings = shadow.querySelector('#settings-modal');
-      if (library?.classList.contains('open')) {
+
+      // Close in priority order: modals first, then side panels
+      if (settings && !settings.classList.contains('hidden')) {
+        e.preventDefault();
+        settings.classList.add('hidden');
+      } else if (library?.classList.contains('open')) {
+        e.preventDefault();
         library.classList.remove('open');
       }
-      if (settings?.classList.contains('open')) {
-        settings.classList.remove('open');
-      }
     }
+  };
+
+  document.addEventListener('keydown', handleKeyDown);
+
+  // Add to cleanup
+  eventCleanupFunctions.push(() => {
+    document.removeEventListener('keydown', handleKeyDown);
   });
 }
 
@@ -681,7 +848,7 @@ function applyTheme(shadow: ShadowRoot): void {
   // Check ChatGPT's theme by inspecting background color
   const htmlBg = window.getComputedStyle(document.documentElement).backgroundColor;
   const bodyBg = window.getComputedStyle(document.body).backgroundColor;
-  
+
   // Check if background is dark (rgb values < 128)
   const isDarkBg = (bg: string) => {
     const match = bg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)/);
@@ -691,38 +858,54 @@ function applyTheme(shadow: ShadowRoot): void {
     }
     return false;
   };
-  
+
   // Check ChatGPT's theme (look for dark mode class on body/html)
-  const chatGPTDark = document.documentElement.classList.contains('dark') ||
-                      document.body.classList.contains('dark') ||
-                      isDarkBg(htmlBg) ||
-                      isDarkBg(bodyBg);
+  const chatGPTDark =
+    document.documentElement.classList.contains('dark') ||
+    document.body.classList.contains('dark') ||
+    isDarkBg(htmlBg) ||
+    isDarkBg(bodyBg);
 
   // Check system preference as fallback
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const isDark = chatGPTDark || prefersDark;
-  
+
   toolbar.setAttribute('data-theme', isDark ? 'dark' : 'light');
   console.log('[PromptLayer] Theme applied:', isDark ? 'dark' : 'light');
 }
 
 /**
- * Watch for theme changes
+ * Watch for theme changes with debouncing for performance
  */
 function watchThemeChanges(shadow: ShadowRoot): void {
+  // Debounced theme application to avoid excessive updates
+  const debouncedApplyTheme = debounce(() => applyTheme(shadow), 300);
+
   // Watch for system theme changes
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    applyTheme(shadow);
+  const handleSystemThemeChange = () => {
+    debouncedApplyTheme();
+  };
+
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  mediaQuery.addEventListener('change', handleSystemThemeChange);
+
+  // Watch for ChatGPT theme changes (DOM mutations) with debouncing
+  themeObserver = new MutationObserver(() => {
+    debouncedApplyTheme();
   });
 
-  // Watch for ChatGPT theme changes (DOM mutations)
-  const observer = new MutationObserver(() => {
-    applyTheme(shadow);
-  });
-
-  observer.observe(document.documentElement, {
+  themeObserver.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ['class'],
+  });
+
+  // Add cleanup
+  eventCleanupFunctions.push(() => {
+    mediaQuery.removeEventListener('change', handleSystemThemeChange);
+    if (themeObserver) {
+      themeObserver.disconnect();
+      themeObserver = null;
+    }
   });
 }
 
@@ -730,6 +913,27 @@ function watchThemeChanges(shadow: ShadowRoot): void {
  * Remove toolbar (cleanup)
  */
 export function removeToolbar(): void {
+  // Clean up all event listeners with error handling
+  eventCleanupFunctions.forEach((cleanup) => {
+    try {
+      cleanup();
+    } catch (error) {
+      console.warn('[PromptLayer] Cleanup function failed:', error);
+    }
+  });
+  eventCleanupFunctions = [];
+
+  // Disconnect theme observer
+  if (themeObserver) {
+    try {
+      themeObserver.disconnect();
+    } catch (error) {
+      console.warn('[PromptLayer] Theme observer disconnect failed:', error);
+    }
+    themeObserver = null;
+  }
+
+  // Remove container
   const container = document.getElementById('promptlayer-container');
   if (container) {
     container.remove();

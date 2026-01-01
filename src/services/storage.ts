@@ -3,12 +3,7 @@
  * Handles all data persistence for prompts, settings, roles, and API keys
  */
 
-import type {
-  Prompt,
-  ExtensionSettings,
-  RoleBlueprint,
-  UsageStats,
-} from '../types';
+import type { Prompt, ExtensionSettings, RoleBlueprint, UsageStats } from '../types';
 import { StorageKey, ErrorType, PromptLayerError } from '../types';
 
 /**
@@ -43,13 +38,59 @@ const DEFAULT_STATS: UsageStats = {
  * Storage service class
  */
 class StorageService {
+  private saveOperationTimestamps: number[] = [];
+  private readonly MAX_SAVES_PER_MINUTE = 30;
+  private readonly RATE_LIMIT_WINDOW = 60000; // 1 minute
+
   /**
-   * Encrypt a string (basic obfuscation for API keys)
+   * Check rate limiting for storage write operations
+   */
+  private checkWriteRateLimit(): void {
+    const now = Date.now();
+    const windowStart = now - this.RATE_LIMIT_WINDOW;
+
+    // Remove timestamps outside the current window
+    this.saveOperationTimestamps = this.saveOperationTimestamps.filter(
+      (timestamp) => timestamp > windowStart
+    );
+
+    // Check if we've exceeded the rate limit
+    if (this.saveOperationTimestamps.length >= this.MAX_SAVES_PER_MINUTE) {
+      throw new PromptLayerError(
+        ErrorType.STORAGE_RATE_LIMIT,
+        'Storage rate limit exceeded',
+        'Too many storage operations. Please wait a moment before trying again.'
+      );
+    }
+
+    // Add current operation timestamp
+    this.saveOperationTimestamps.push(now);
+  }
+
+  /**
+   * Encrypt a string (API keys) using XOR with a derived key
+   * Note: This provides basic obfuscation. For production use,
+   * consider using Web Crypto API or chrome.storage.session for better security.
+   * The XOR cipher here is vulnerable to known-plaintext attacks.
    */
   private encrypt(value: string): string {
-    // Simple base64 encoding for now
-    // In production, consider using Web Crypto API
-    return btoa(value);
+    // Use a combination of extension ID and a salt for key derivation
+    // Note: In a production environment, use crypto.getRandomValues() for the salt
+    const salt = 'promptlayer-2024';
+    const extensionId = chrome.runtime.id || 'default';
+    const key = `${extensionId}-${salt}`;
+
+    // XOR encryption with rotating key, keeping values in 8-bit range
+    let encrypted = '';
+    for (let i = 0; i < value.length; i++) {
+      const keyChar = key.charCodeAt(i % key.length);
+      const valueChar = value.charCodeAt(i);
+      // Use bitwise AND with 0xFF to ensure result stays within Latin1 range (0-255)
+      encrypted += String.fromCharCode((valueChar ^ keyChar) & 0xff);
+    }
+
+    // Base64 encode to make it storable
+    return btoa(encrypted);
   }
 
   /**
@@ -57,9 +98,26 @@ class StorageService {
    */
   private decrypt(value: string): string {
     try {
-      return atob(value);
+      // Base64 decode first
+      const decoded = atob(value);
+
+      // Use same key derivation
+      const salt = 'promptlayer-2024';
+      const extensionId = chrome.runtime.id || 'default';
+      const key = `${extensionId}-${salt}`;
+
+      // XOR decryption (same operation as encryption for XOR, with 8-bit masking)
+      let decrypted = '';
+      for (let i = 0; i < decoded.length; i++) {
+        const keyChar = key.charCodeAt(i % key.length);
+        const valueChar = decoded.charCodeAt(i);
+        // Use bitwise AND with 0xFF to ensure result stays within valid range
+        decrypted += String.fromCharCode((valueChar ^ keyChar) & 0xff);
+      }
+
+      return decrypted;
     } catch {
-      return value; // Return as-is if decryption fails
+      return value; // Return as-is if decryption fails (backward compatibility)
     }
   }
 
@@ -82,9 +140,11 @@ class StorageService {
    */
   async setApiKey(apiKey: string): Promise<void> {
     try {
+      this.checkWriteRateLimit();
       const encrypted = this.encrypt(apiKey);
       await chrome.storage.local.set({ [StorageKey.API_KEY]: encrypted });
     } catch (error) {
+      if (error instanceof PromptLayerError) throw error;
       console.error('Error setting API key:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
@@ -124,10 +184,12 @@ class StorageService {
    */
   async updateSettings(updates: Partial<ExtensionSettings>): Promise<void> {
     try {
+      this.checkWriteRateLimit();
       const currentSettings = await this.getSettings();
       const newSettings = { ...currentSettings, ...updates };
       await chrome.storage.local.set({ [StorageKey.SETTINGS]: newSettings });
     } catch (error) {
+      if (error instanceof PromptLayerError) throw error;
       console.error('Error updating settings:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
@@ -159,12 +221,15 @@ class StorageService {
   }
 
   /**
-   * Save a new prompt
+   * Save a new prompt with rate limiting
    */
   async savePrompt(prompt: Prompt): Promise<void> {
     try {
+      // Check rate limit
+      this.checkWriteRateLimit();
+
       const prompts = await this.getPrompts();
-      
+
       // Check storage quota (warn at 400, max at 500)
       if (prompts.length >= 500) {
         throw new PromptLayerError(
@@ -192,6 +257,7 @@ class StorageService {
    */
   async updatePrompt(id: string, updates: Partial<Prompt>): Promise<void> {
     try {
+      this.checkWriteRateLimit();
       const prompts = await this.getPrompts();
       const index = prompts.findIndex((p) => p.id === id);
 
@@ -221,10 +287,12 @@ class StorageService {
    */
   async deletePrompt(id: string): Promise<void> {
     try {
+      this.checkWriteRateLimit();
       const prompts = await this.getPrompts();
       const filtered = prompts.filter((p) => p.id !== id);
       await chrome.storage.local.set({ [StorageKey.PROMPTS]: filtered });
     } catch (error) {
+      if (error instanceof PromptLayerError) throw error;
       console.error('Error deleting prompt:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
@@ -355,7 +423,10 @@ class StorageService {
   /**
    * Import data from JSON
    */
-  async importData(jsonData: string, mergeStrategy: 'replace' | 'merge' = 'merge'): Promise<{
+  async importData(
+    jsonData: string,
+    mergeStrategy: 'replace' | 'merge' = 'merge'
+  ): Promise<{
     promptsImported: number;
     rolesImported: number;
   }> {
@@ -373,7 +444,7 @@ class StorageService {
           const existingPrompts = await this.getPrompts();
           const existingIds = new Set(existingPrompts.map((p) => p.id));
           const newPrompts = importData.prompts.filter((p: Prompt) => !existingIds.has(p.id));
-          
+
           await chrome.storage.local.set({
             [StorageKey.PROMPTS]: [...existingPrompts, ...newPrompts],
           });

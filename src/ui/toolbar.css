@@ -20,6 +20,8 @@
   --pl-accent-light: rgba(16, 163, 127, 0.1);
   --pl-danger: #ef4444;
   --pl-danger-hover: #dc2626;
+  --pl-warning: #f59e0b;
+  --pl-info: #3b82f6;
   --pl-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --pl-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --pl-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
@@ -82,8 +84,13 @@
   box-sizing: border-box;
   overflow: visible;
   z-index: 999999;
-  backdrop-filter: blur(12px);
   background: var(--pl-bg-primary);
+}
+
+@supports (backdrop-filter: blur(12px)) {
+  #promptlayer-toolbar {
+    backdrop-filter: blur(12px);
+  }
 }
 
 [data-theme="dark"] #promptlayer-toolbar {
@@ -290,6 +297,8 @@ textarea {
 }
 
 select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%236e6e6e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -574,12 +583,12 @@ textarea {
 }
 
 .notification.warning {
-  border-left: 4px solid #f59e0b;
+  border-left: 4px solid var(--pl-warning);
   background: var(--pl-bg-primary);
 }
 
 .notification.info {
-  border-left: 4px solid #3b82f6;
+  border-left: 4px solid var(--pl-info);
   background: var(--pl-bg-primary);
 }
 
@@ -594,7 +603,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000001;
+  z-index: 1000002;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   padding: 20px;
@@ -697,8 +706,8 @@ textarea {
   display: flex;
   flex-direction: column;
   transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0.3s;
-  z-index: 1000000;
-  visibility: visible;
+  z-index: 1000001;
+  visibility: hidden;
 }
 
 [data-theme="dark"] .library-panel {
@@ -709,10 +718,6 @@ textarea {
   right: 0;
   visibility: visible;
   transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0s;
-}
-
-.library-panel.hidden {
-  display: flex;
 }
 
 .library-header {

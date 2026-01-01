@@ -175,8 +175,10 @@ function showWelcomeMessage(shadow: ShadowRoot): void {
 
   expandBtn?.addEventListener('click', () => {
     toolbar.classList.remove('collapsed');
-    const collapseBtn = shadow.querySelector('#collapse-btn');
-    if (collapseBtn) collapseBtn.textContent = '▲';
+    const toggleInputBtn = shadow.querySelector('#toggle-input-btn');
+    if (toggleInputBtn) {
+      toggleInputBtn.classList.add('active');
+    }
     welcome.remove();
   });
 
@@ -396,14 +398,21 @@ function setupButtons(shadow: ShadowRoot): void {
   saveBtn?.addEventListener('click', () => handleSavePrompt(shadow));
 
   libraryBtn?.addEventListener('click', () => {
-    libraryPanel?.classList.toggle('open');
-    if (libraryPanel?.classList.contains('open')) {
+    const isOpen = libraryPanel?.classList.contains('open');
+    if (isOpen) {
+      libraryPanel?.classList.remove('open');
+      libraryBtn.classList.remove('active');
+    } else {
+      libraryPanel?.classList.add('open');
+      libraryBtn.classList.add('active');
       loadPromptLibrary(shadow);
     }
   });
 
+  // Library close button - properly closes the panel
   libraryClose?.addEventListener('click', () => {
     libraryPanel?.classList.remove('open');
+    libraryBtn?.classList.remove('active');
   });
 
   // Setup library search and filters with debouncing
@@ -684,7 +693,9 @@ async function loadPromptToInput(shadow: ShadowRoot, promptId: string): Promise<
 
     // Close library panel
     const libraryPanel = shadow.querySelector('#prompt-library');
+    const libraryBtn = shadow.querySelector('#library-btn');
     libraryPanel?.classList.remove('open');
+    libraryBtn?.classList.remove('active');
 
     showNotification(shadow, 'success', '✓ Prompt loaded');
   } catch (error) {
@@ -755,28 +766,49 @@ function showNotification(shadow: ShadowRoot, type: NotificationType, message: s
  * Setup collapse/expand behavior
  */
 function setupCollapseBehavior(shadow: ShadowRoot): void {
-  const collapseBtn = shadow.querySelector('#collapse-btn');
   const toolbar = shadow.querySelector('#promptlayer-toolbar');
+  const toggleHandle = shadow.querySelector('#toggle-handle');
+  const collapseBtn = shadow.querySelector('#collapse-btn');
+  const toggleInputBtn = shadow.querySelector('#toggle-input-btn');
 
-  if (collapseBtn && toolbar) {
-    collapseBtn.addEventListener('click', () => {
-      toolbar.classList.toggle('collapsed');
-      const isCollapsed = toolbar.classList.contains('collapsed');
-      collapseBtn.textContent = isCollapsed ? '▼' : '▲';
-    });
-  }
-
-  // Show toolbar when mouse near top of screen
-  document.addEventListener('mousemove', (e) => {
-    if (e.clientY < 10 && toolbar?.classList.contains('hidden')) {
+  // Toggle handle - shows toolbar when clicked (when hidden)
+  toggleHandle?.addEventListener('click', () => {
+    if (toolbar?.classList.contains('hidden')) {
       toolbar.classList.remove('hidden');
+      toggleHandle.classList.add('hidden');
     }
   });
 
-  // Add double-click on header to toggle visibility
+  // Collapse button (chevron) - collapses/expands the content area
+  collapseBtn?.addEventListener('click', () => {
+    toolbar?.classList.toggle('collapsed');
+    // Update toggle input button state to match
+    if (toolbar?.classList.contains('collapsed')) {
+      toggleInputBtn?.classList.remove('active');
+    } else {
+      toggleInputBtn?.classList.add('active');
+    }
+  });
+
+  // Toggle input area button - same as collapse but with active state
+  toggleInputBtn?.addEventListener('click', () => {
+    toolbar?.classList.toggle('collapsed');
+    toggleInputBtn.classList.toggle('active');
+  });
+
+  // Show toolbar when mouse near top of screen (if hidden)
+  document.addEventListener('mousemove', (e) => {
+    if (e.clientY < 10 && toolbar?.classList.contains('hidden')) {
+      toolbar.classList.remove('hidden');
+      toggleHandle?.classList.add('hidden');
+    }
+  });
+
+  // Double-click on header to hide toolbar completely
   const header = shadow.querySelector('.toolbar-header');
   header?.addEventListener('dblclick', () => {
-    toolbar?.classList.toggle('hidden');
+    toolbar?.classList.add('hidden');
+    toggleHandle?.classList.remove('hidden');
   });
 }
 
@@ -817,6 +849,7 @@ function setupKeyboardShortcuts(shadow: ShadowRoot): void {
     // Escape: Close modals/library
     if (e.key === 'Escape') {
       const library = shadow.querySelector('#prompt-library');
+      const libraryBtn = shadow.querySelector('#library-btn');
       const settings = shadow.querySelector('#settings-modal');
 
       // Close in priority order: modals first, then side panels
@@ -826,6 +859,7 @@ function setupKeyboardShortcuts(shadow: ShadowRoot): void {
       } else if (library?.classList.contains('open')) {
         e.preventDefault();
         library.classList.remove('open');
+        libraryBtn?.classList.remove('active');
       }
     }
   };

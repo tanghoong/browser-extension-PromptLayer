@@ -278,9 +278,9 @@ function setupSettings(shadow: ShadowRoot): void {
       return;
     }
 
-    // Check for valid characters - allow alphanumeric, hyphens, underscores, and common base64 chars
-    // OpenAI keys use base64-like encoding which can include various characters
-    if (!/^sk-[A-Za-z0-9_-]+$/.test(apiKey) && !/^sk-.+$/.test(apiKey)) {
+    // Basic validation - just ensure it starts with 'sk-' and has reasonable length
+    // Don't be overly restrictive on character set since OpenAI may use various formats
+    if (!apiKey.startsWith('sk-') || apiKey.length < 20) {
       showNotification(shadow, 'error', 'API key format appears invalid.');
       return;
     }
@@ -585,9 +585,9 @@ async function loadPromptLibrary(shadow: ShadowRoot): Promise<void> {
       case 'recent':
         prompts.sort((a, b) => {
           try {
-            const dateA = new Date(b.createdAt).getTime();
-            const dateB = new Date(a.createdAt).getTime();
-            return dateA - dateB;
+            const timeA = new Date(a.createdAt).getTime();
+            const timeB = new Date(b.createdAt).getTime();
+            return timeB - timeA; // Most recent first
           } catch {
             return 0; // Keep original order if dates are invalid
           }

@@ -939,14 +939,14 @@ textarea {
   left: 50%;
   transform: translateX(-50%);
   z-index: 1000002;
-  margin-top: var(--pl-spacing-md);
-  animation: slideDown 0.3s ease;
+  margin-top: var(--pl-spacing-lg);
+  animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes slideDown {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(-20px);
+    transform: translateX(-50%) translateY(-12px);
   }
   to {
     opacity: 1;
@@ -957,43 +957,45 @@ textarea {
 .welcome-content {
   background: var(--pl-bg-primary);
   border: 2px solid var(--pl-accent);
-  border-radius: var(--pl-radius-lg);
-  padding: var(--pl-spacing-lg);
-  box-shadow: 0 8px 24px var(--pl-shadow);
+  border-radius: var(--pl-radius-xl);
+  padding: var(--pl-spacing-2xl);
+  box-shadow: var(--pl-shadow-lg);
   min-width: 400px;
   max-width: 500px;
   position: relative;
 }
 
 .welcome-content h3 {
-  margin: 0 0 var(--pl-spacing-sm) 0;
-  font-size: 18px;
-  font-weight: 600;
+  margin: 0 0 var(--pl-spacing-md) 0;
+  font-size: 19px;
+  font-weight: 700;
   color: var(--pl-text-primary);
+  letter-spacing: -0.01em;
 }
 
 .welcome-content p {
-  margin: 0 0 var(--pl-spacing-md) 0;
+  margin: 0 0 var(--pl-spacing-lg) 0;
   color: var(--pl-text-secondary);
-  line-height: 1.5;
+  line-height: 1.6;
+  font-size: 14px;
 }
 
 .welcome-content .btn-close {
   position: absolute;
-  top: var(--pl-spacing-sm);
-  right: var(--pl-spacing-sm);
+  top: var(--pl-spacing-md);
+  right: var(--pl-spacing-md);
   background: none;
   border: none;
-  font-size: 24px;
+  font-size: 28px;
   color: var(--pl-text-secondary);
   cursor: pointer;
   padding: 0;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--pl-radius-sm);
+  border-radius: var(--pl-radius-md);
   transition: all 0.2s;
 }
 
@@ -1009,7 +1011,7 @@ textarea {
 
 .input-with-toggle {
   display: flex;
-  gap: var(--pl-spacing-xs);
+  gap: var(--pl-spacing-sm);
 }
 
 .input-with-toggle input {
@@ -1018,10 +1020,11 @@ textarea {
 
 /* Small text */
 small {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--pl-text-secondary);
   display: block;
-  margin-top: var(--pl-spacing-xs);
+  margin-top: var(--pl-spacing-sm);
+  line-height: 1.5;
 }
 
 /* Responsive adjustments */

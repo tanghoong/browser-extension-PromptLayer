@@ -18,10 +18,10 @@ import {
 } from '../services/roleBlueprints';
 import { debounce, generateId } from '../utils/helpers';
 import { logger } from '../utils/logger';
+import { validateApiKey, validatePromptTitle } from '../utils/validation';
 import type { RoleBlueprint, RoleCategory, SuggestedRole } from '../types';
 
 // Constants
-const MIN_API_KEY_LENGTH = 48; // OpenAI API keys are typically 51+ characters
 const MAX_PROMPT_TITLE_LENGTH = 200;
 
 // Type definitions
@@ -284,32 +284,16 @@ function setupSettings(shadow: ShadowRoot): void {
       return;
     }
 
-    // Validate API key format more strictly
-    if (!apiKey.startsWith('sk-')) {
-      showNotification(shadow, 'error', 'Invalid API key format. Key should start with "sk-"');
-      return;
-    }
-
-    // Check minimum length (OpenAI keys are typically 51+ characters)
-    if (apiKey.length < MIN_API_KEY_LENGTH) {
-      showNotification(
-        shadow,
-        'error',
-        `API key seems too short. Expected at least ${MIN_API_KEY_LENGTH} characters.`
-      );
-      return;
-    }
-
-    // Basic validation - just ensure it starts with 'sk-' and has reasonable length
-    // Don't be overly restrictive on character set since OpenAI may use various formats
-    if (!apiKey.startsWith('sk-') || apiKey.length < 20) {
-      showNotification(shadow, 'error', 'API key format appears invalid.');
+    // Validate API key with comprehensive checks
+    const validation = validateApiKey(apiKey);
+    if (!validation.valid) {
+      showNotification(shadow, 'error', validation.error || 'Invalid API key');
       return;
     }
 
     try {
-      // Use storage service for proper encryption
-      await storageService.setApiKey(apiKey);
+      // Use storage service for proper encryption with validated key
+      await storageService.setApiKey(validation.sanitized!);
       await storageService.updateSettings({
         model: modelSelect?.value || 'gpt-4o-mini',
         temperature: parseFloat(tempSlider?.value || '0.3'),
@@ -546,27 +530,17 @@ async function handleSavePrompt(shadow: ShadowRoot): Promise<void> {
   const title = prompt('Enter a title for this prompt:');
   if (!title) return;
 
-  // Normalize title: trim whitespace; rely on proper escaping when rendering
-  const sanitizedTitle = title.trim();
-
-  if (sanitizedTitle.length === 0) {
-    showNotification(shadow, 'error', 'Title cannot be empty');
-    return;
-  }
-
-  if (sanitizedTitle.length > MAX_PROMPT_TITLE_LENGTH) {
-    showNotification(
-      shadow,
-      'error',
-      `Title is too long (max ${MAX_PROMPT_TITLE_LENGTH} characters)`
-    );
+  // Validate and sanitize title
+  const titleValidation = validatePromptTitle(title, MAX_PROMPT_TITLE_LENGTH);
+  if (!titleValidation.valid) {
+    showNotification(shadow, 'error', titleValidation.error || 'Invalid title');
     return;
   }
 
   try {
     await storageService.savePrompt({
       id: `prompt_${generateId()}`,
-      title: sanitizedTitle,
+      title: titleValidation.sanitized!,
       content: promptInput.value.trim(),
       tags: [],
       createdAt: new Date(),

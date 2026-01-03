@@ -1,0 +1,231 @@
+/**
+ * Input validation and sanitization utilities
+ */
+
+/**
+ * Sanitize HTML to prevent XSS attacks
+ * Uses DOMPurify-style approach with allowlist
+ */
+export function sanitizeHTML(html: string): string {
+  const div = document.createElement('div');
+  div.textContent = html; // This escapes all HTML entities
+  return div.innerHTML;
+}
+
+/**
+ * Validate and sanitize API key
+ */
+export function validateApiKey(apiKey: string): {
+  valid: boolean;
+  sanitized?: string;
+  error?: string;
+} {
+  // Trim whitespace
+  const trimmed = apiKey.trim();
+
+  // Check if empty
+  if (!trimmed) {
+    return { valid: false, error: 'API key cannot be empty' };
+  }
+
+  // OpenAI API keys should start with sk-
+  if (!trimmed.startsWith('sk-')) {
+    return { valid: false, error: 'API key must start with "sk-"' };
+  }
+
+  // Check minimum length (OpenAI keys are typically 51+ characters)
+  if (trimmed.length < 48) {
+    return { valid: false, error: 'API key appears to be too short' };
+  }
+
+  // Check for invalid characters (API keys should only contain alphanumeric and hyphens/underscores)
+  const validPattern = /^sk-[A-Za-z0-9_-]+$/;
+  if (!validPattern.test(trimmed)) {
+    return { valid: false, error: 'API key contains invalid characters' };
+  }
+
+  return { valid: true, sanitized: trimmed };
+}
+
+/**
+ * Validate prompt title
+ */
+export function validatePromptTitle(title: string, maxLength = 200): {
+  valid: boolean;
+  sanitized?: string;
+  error?: string;
+} {
+  const trimmed = title.trim();
+
+  if (!trimmed) {
+    return { valid: false, error: 'Title cannot be empty' };
+  }
+
+  if (trimmed.length > maxLength) {
+    return { valid: false, error: `Title must be ${maxLength} characters or less` };
+  }
+
+  // Remove any potentially dangerous characters while preserving readability
+  const sanitized = trimmed.replace(/[<>\"']/g, '');
+
+  return { valid: true, sanitized };
+}
+
+/**
+ * Validate prompt content
+ */
+export function validatePromptContent(content: string, maxLength = 10000): {
+  valid: boolean;
+  sanitized?: string;
+  error?: string;
+} {
+  const trimmed = content.trim();
+
+  if (!trimmed) {
+    return { valid: false, error: 'Prompt content cannot be empty' };
+  }
+
+  if (trimmed.length > maxLength) {
+    return { valid: false, error: `Prompt must be ${maxLength} characters or less` };
+  }
+
+  return { valid: true, sanitized: trimmed };
+}
+
+/**
+ * Validate role name
+ */
+export function validateRoleName(name: string, maxLength = 100): {
+  valid: boolean;
+  sanitized?: string;
+  error?: string;
+} {
+  const trimmed = name.trim();
+
+  if (!trimmed) {
+    return { valid: false, error: 'Role name cannot be empty' };
+  }
+
+  if (trimmed.length > maxLength) {
+    return { valid: false, error: `Role name must be ${maxLength} characters or less` };
+  }
+
+  // Sanitize to prevent script injection
+  const sanitized = trimmed.replace(/[<>\"']/g, '');
+
+  return { valid: true, sanitized };
+}
+
+/**
+ * Validate URL
+ */
+export function validateURL(url: string): {
+  valid: boolean;
+  sanitized?: string;
+  error?: string;
+} {
+  try {
+    const parsed = new URL(url);
+    // Only allow http and https protocols
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { valid: false, error: 'Only HTTP and HTTPS URLs are allowed' };
+    }
+    return { valid: true, sanitized: parsed.toString() };
+  } catch {
+    return { valid: false, error: 'Invalid URL format' };
+  }
+}
+
+/**
+ * Sanitize filename for safe storage
+ */
+export function sanitizeFilename(filename: string): string {
+  // Remove path traversal attempts and dangerous characters
+  return filename
+    .replace(/[\/\\]/g, '-')
+    .replace(/\.\./g, '')
+    .replace(/[<>:"|?*\x00-\x1F]/g, '')
+    .substring(0, 255);
+}
+
+/**
+ * Validate email address
+ */
+export function validateEmail(email: string): {
+  valid: boolean;
+  sanitized?: string;
+  error?: string;
+} {
+  const trimmed = email.trim().toLowerCase();
+
+  if (!trimmed) {
+    return { valid: false, error: 'Email cannot be empty' };
+  }
+
+  // Basic email validation pattern
+  const emailPattern = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
+  if (!emailPattern.test(trimmed)) {
+    return { valid: false, error: 'Invalid email format' };
+  }
+
+  return { valid: true, sanitized: trimmed };
+}
+
+/**
+ * Validate numeric input
+ */
+export function validateNumber(
+  value: string | number,
+  min?: number,
+  max?: number
+): {
+  valid: boolean;
+  number?: number;
+  error?: string;
+} {
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+
+  if (isNaN(num)) {
+    return { valid: false, error: 'Invalid number' };
+  }
+
+  if (min !== undefined && num < min) {
+    return { valid: false, error: `Number must be at least ${min}` };
+  }
+
+  if (max !== undefined && num > max) {
+    return { valid: false, error: `Number must be at most ${max}` };
+  }
+
+  return { valid: true, number: num };
+}
+
+/**
+ * Escape special characters in regex
+ */
+export function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Deep sanitize object to prevent prototype pollution
+ */
+export function sanitizeObject<T extends Record<string, unknown>>(obj: T): T {
+  const sanitized: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(obj)) {
+    // Skip prototype-related keys
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      continue;
+    }
+
+    // Recursively sanitize nested objects
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      sanitized[key] = sanitizeObject(value as Record<string, unknown>);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+
+  return sanitized as T;
+}

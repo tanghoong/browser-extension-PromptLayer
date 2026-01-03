@@ -5,6 +5,7 @@
 /**
  * Memoize function results to avoid recomputation
  * Useful for expensive operations like parsing or calculations
+ * Uses FIFO (First-In-First-Out) cache eviction when maxCacheSize is reached
  */
 export function memoize<TArgs extends unknown[], TResult>(
   fn: (...args: TArgs) => TResult,
@@ -36,7 +37,7 @@ export function memoize<TArgs extends unknown[], TResult>(
 
     const result = fn(...args);
 
-    // Implement LRU-like cache eviction
+    // Implement FIFO cache eviction
     if (cache.size >= maxCacheSize) {
       const firstKey = cache.keys().next().value as string | undefined;
       if (firstKey) {
@@ -51,6 +52,7 @@ export function memoize<TArgs extends unknown[], TResult>(
 
 /**
  * Create an async memoize function
+ * Uses FIFO (First-In-First-Out) cache eviction when maxCacheSize is reached
  */
 export function memoizeAsync<TArgs extends unknown[], TResult>(
   fn: (...args: TArgs) => Promise<TResult>,
@@ -90,7 +92,7 @@ export function memoizeAsync<TArgs extends unknown[], TResult>(
 
     const result = await fn(...args);
 
-    // Implement LRU-like cache eviction
+    // Implement FIFO cache eviction
     if (cache.size >= maxCacheSize) {
       const firstKey = cache.keys().next().value as string | undefined;
       if (firstKey) {
@@ -129,6 +131,11 @@ export class Batcher<T> {
     this.queue.push(item);
 
     if (this.queue.length >= this.batchSize) {
+      // Clear timeout when flushing due to batch size to prevent double flush
+      if (this.timeout) {
+        clearTimeout(this.timeout);
+        this.timeout = null;
+      }
       this.flush();
     } else if (!this.timeout) {
       this.timeout = setTimeout(() => this.flush(), this.delay);

@@ -42,6 +42,20 @@ class StorageService {
   private saveOperationTimestamps: number[] = [];
   private readonly MAX_SAVES_PER_MINUTE = 30;
   private readonly RATE_LIMIT_WINDOW = 60000; // 1 minute
+  private cachedKey: CryptoKey | null = null;
+
+  /**
+   * Ensure Web Crypto API is available
+   */
+  private ensureCryptoAvailable(): void {
+    if (!crypto?.subtle) {
+      throw new PromptLayerError(
+        ErrorType.UNKNOWN_ERROR,
+        'Crypto API unavailable',
+        'Your browser does not support secure encryption. Please use a modern browser.'
+      );
+    }
+  }
 
   /**
    * Check rate limiting for storage write operations
@@ -73,6 +87,8 @@ class StorageService {
    * This provides strong encryption for sensitive data like API keys
    */
   private async encrypt(value: string): Promise<string> {
+    this.ensureCryptoAvailable();
+    
     try {
       // Generate a random encryption key from extension ID
       const extensionId = chrome.runtime.id || 'default-extension-id';
@@ -169,8 +185,17 @@ class StorageService {
 
   /**
    * Derive a cryptographic key from extension ID
+   * Note: The encryption key is derived only from the extension ID without user-specific secrets.
+   * This means the same extension ID produces the same key across all users.
+   * For enhanced security, consider incorporating user-specific secrets or using chrome.storage.session.
+   * The key is cached in memory for performance after first derivation.
    */
   private async getKeyMaterial(password: string): Promise<CryptoKey> {
+    // Return cached key if available to avoid expensive PBKDF2 computation
+    if (this.cachedKey) {
+      return this.cachedKey;
+    }
+
     const encoder = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
       'raw',
@@ -180,7 +205,7 @@ class StorageService {
       ['deriveBits', 'deriveKey']
     );
 
-    return crypto.subtle.deriveKey(
+    const derivedKey = await crypto.subtle.deriveKey(
       {
         name: 'PBKDF2',
         salt: encoder.encode('promptlayer-salt-v1'),
@@ -192,17 +217,25 @@ class StorageService {
       false,
       ['encrypt', 'decrypt']
     );
+
+    // Cache the derived key for performance
+    this.cachedKey = derivedKey;
+    return derivedKey;
   }
 
   /**
    * Convert ArrayBuffer to base64 string
+   * Uses chunked conversion to avoid inefficient per-byte concatenation
+   * and potential stack issues with very large arrays
    */
   private arrayBufferToBase64(buffer: Uint8Array): string {
-    let binary = '';
-    const len = buffer.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(buffer[i]);
+    const chunkSize = 0x8000; // 32KB chunks
+    const chunks: string[] = [];
+    for (let i = 0; i < buffer.length; i += chunkSize) {
+      const chunk = buffer.subarray(i, i + chunkSize);
+      chunks.push(String.fromCharCode(...chunk));
     }
+    const binary = chunks.join('');
     return btoa(binary);
   }
 

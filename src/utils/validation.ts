@@ -3,14 +3,15 @@
  */
 
 /**
- * Sanitize HTML to prevent XSS attacks
- * This escapes all HTML entities to prevent script injection
- * For more complex HTML sanitization needs, consider using DOMPurify
+ * Sanitize HTML to prevent XSS attacks.
+ * This escapes HTML entities to prevent script injection.
+ * For more complex HTML sanitization needs (allowlisting tags/attributes),
+ * consider using a dedicated library such as DOMPurify.
  */
 export function sanitizeHTML(html: string): string {
-  const div = document.createElement('div');
-  div.textContent = html; // This converts HTML to plain text, escaping all entities
-  return div.textContent || ''; // Return the escaped text
+  // Delegate to escapeHTML so behavior is consistent across the codebase.
+  // Normalize falsy input to an empty string to avoid returning "undefined"/"null".
+  return escapeHTML(html || '');
 }
 
 /**
@@ -45,18 +46,22 @@ export function validateApiKey(apiKey: string): {
     return { valid: false, error: 'API key cannot be empty' };
   }
 
-  // OpenAI API keys should start with sk-
+  // OpenAI API keys can have different formats:
+  // - Standard keys: sk-...
+  // - Project keys: sk-proj-...
+  // - Service account keys may have other formats
   if (!trimmed.startsWith('sk-')) {
     return { valid: false, error: 'API key must start with "sk-"' };
   }
 
-  // Check minimum length (OpenAI keys are typically 51+ characters)
-  if (trimmed.length < 48) {
+  // Check minimum length (OpenAI keys are typically 48+ characters)
+  if (trimmed.length < 40) {
     return { valid: false, error: 'API key appears to be too short' };
   }
 
   // Check for invalid characters (API keys should only contain alphanumeric and hyphens/underscores)
-  const validPattern = /^sk-[A-Za-z0-9_-]+$/;
+  // Updated pattern to support newer formats like sk-proj-...
+  const validPattern = /^sk-(?:proj-)?[A-Za-z0-9_-]+$/;
   if (!validPattern.test(trimmed)) {
     return { valid: false, error: 'API key contains invalid characters' };
   }
@@ -236,8 +241,15 @@ export function sanitizeObject<T extends Record<string, unknown>>(obj: T): T {
       continue;
     }
 
-    // Recursively sanitize nested objects
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
+    // Handle arrays - recursively sanitize objects within
+    if (Array.isArray(value)) {
+      sanitized[key] = value.map((item) =>
+        typeof item === 'object' && item !== null
+          ? sanitizeObject(item as Record<string, unknown>)
+          : item
+      );
+    } else if (value && typeof value === 'object') {
+      // Recursively sanitize nested objects
       sanitized[key] = sanitizeObject(value as Record<string, unknown>);
     } else {
       sanitized[key] = value;

@@ -4,10 +4,17 @@
  */
 
 // In Chrome extension, check if we're in development mode
-// Safely check for development version with fallback
-const isDevelopment =
-  typeof chrome !== 'undefined' &&
-  (chrome.runtime?.getManifest().version_name?.includes('dev') || false);
+// Safely check for development version with fallback and error handling
+const isDevelopment = (() => {
+  try {
+    return (
+      typeof chrome !== 'undefined' &&
+      (chrome.runtime?.getManifest().version_name?.includes('dev') || false)
+    );
+  } catch {
+    return false;
+  }
+})();
 
 export const logger = {
   /**

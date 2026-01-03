@@ -65,10 +65,10 @@ This document summarizes all enhancements, improvements, bug fixes, and security
 ### 1. **Memoization Utility**
 - **Created**: `src/utils/performance.ts`
 - **Features**:
-  - Synchronous memoization with LRU cache eviction
+  - Synchronous memoization with FIFO cache eviction
   - Asynchronous memoization with TTL support
   - Safe key generation (handles circular references)
-- **Usage**: Applied to token estimation in `promptEnhancer.ts`
+- **Usage**: Available for use with expensive operations
 
 ### 2. **Performance Utilities**
 - **Batching**: `Batcher` class for grouping operations

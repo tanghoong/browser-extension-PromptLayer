@@ -149,15 +149,60 @@ async function initializeToolbar(shadow: ShadowRoot): Promise<void> {
     watchThemeChanges(shadow);
   } catch (error) {
     logger.error('Failed to initialize toolbar features:', error);
-    // Show user-friendly error notification
+    // Show user-friendly error notification with retry and close options
     const notificationArea = shadow.querySelector('#notification-area');
     if (notificationArea) {
       const notification = document.createElement('div');
       notification.className = 'notification error';
-      notification.textContent =
-        'PromptLayer failed to initialize some features. Please refresh the page.';
+
+      const message = document.createElement('span');
+      message.textContent =
+        'PromptLayer failed to initialize some features. You can retry or refresh the page.';
+      notification.appendChild(message);
+
+      // Add more specific error information when available
+      if (
+        error &&
+        typeof error === 'object' &&
+        'message' in error &&
+        typeof (error as Error).message === 'string'
+      ) {
+        const details = document.createElement('span');
+        details.className = 'notification-details';
+        details.textContent = ' Details: ' + (error as Error).message;
+        notification.appendChild(details);
+      }
+
+      // Add Retry action button
+      const retryButton = document.createElement('button');
+      retryButton.className = 'notification-action retry';
+      retryButton.textContent = 'Retry';
+      notification.appendChild(retryButton);
+
+      // Add Close button to allow manual dismissal
+      const closeButton = document.createElement('button');
+      closeButton.className = 'notification-close';
+      closeButton.textContent = '×';
+      notification.appendChild(closeButton);
+
       notificationArea.appendChild(notification);
-      setTimeout(() => notification.remove(), 5000);
+
+      const autoDismissTimeout = window.setTimeout(() => {
+        notification.remove();
+      }, 10000); // Extended to 10 seconds for user to read and act
+
+      retryButton.addEventListener('click', () => {
+        window.clearTimeout(autoDismissTimeout);
+        notification.remove();
+        initializeToolbar(shadow).catch((retryError) => {
+          logger.error('Retrying toolbar initialization failed:', retryError);
+        });
+      });
+
+      closeButton.addEventListener('click', () => {
+        window.clearTimeout(autoDismissTimeout);
+        notification.remove();
+      });
     }
   }
 }

@@ -15,11 +15,18 @@ import { openAIClient } from './openaiClient';
 import { getRoleBlueprint, getAllRoleBlueprints } from './roleBlueprints';
 import { storageService } from './storage';
 import { logger } from '../utils/logger';
+import { memoize } from '../utils/performance';
 
 /**
  * Prompt enhancer class
  */
 class PromptEnhancer {
+  // Memoize token estimation to avoid repeated calculations
+  private memoizedEstimateTokens = memoize(
+    (text: string) => Math.ceil(text.length / 4),
+    { maxCacheSize: 100 }
+  );
+
   /**
    * Parse enhanced prompt response into structured sections
    */
@@ -231,8 +238,8 @@ Be precise, remove ambiguity, and optimize for quality results.${roleSuggestionI
    * Get estimated tokens for a prompt
    */
   estimateTokens(text: string): number {
-    // Rough estimation: ~4 characters per token
-    return Math.ceil(text.length / 4);
+    // Use memoized version for better performance
+    return this.memoizedEstimateTokens(text);
   }
 
   /**

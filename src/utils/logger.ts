@@ -4,9 +4,10 @@
  */
 
 // In Chrome extension, check if we're in development mode
-// This will be replaced by webpack DefinePlugin at build time
+// Safely check for development version with fallback
 const isDevelopment =
-  typeof chrome !== 'undefined' && chrome.runtime?.getManifest().version_name?.includes('dev');
+  typeof chrome !== 'undefined' &&
+  (chrome.runtime?.getManifest().version_name?.includes('dev') || false);
 
 export const logger = {
   /**

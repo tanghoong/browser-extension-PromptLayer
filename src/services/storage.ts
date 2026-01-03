@@ -130,12 +130,17 @@ class StorageService {
       const decoder = new TextDecoder();
       return decoder.decode(decryptedData);
     } catch (error) {
-      // Fallback for backward compatibility with old XOR encryption
+      // Try legacy XOR decryption for backward compatibility
       try {
         return this.decryptLegacyXOR(value);
-      } catch {
+      } catch (legacyError) {
+        // Both decryption methods failed - throw error instead of returning raw value
         logger.error('Decryption failed:', error);
-        return value; // Return as-is if all decryption methods fail
+        throw new PromptLayerError(
+          ErrorType.UNKNOWN_ERROR,
+          'Failed to decrypt data',
+          'Could not decrypt your API key. Please re-enter it in settings.'
+        );
       }
     }
   }

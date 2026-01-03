@@ -115,37 +115,51 @@ async function initializeToolbar(shadow: ShadowRoot): Promise<void> {
     return;
   }
 
-  // Check if first-time user
-  const isFirstTime = await checkFirstTimeUser();
+  try {
+    // Check if first-time user
+    const isFirstTime = await checkFirstTimeUser();
 
-  // Collapse toolbar by default
-  toolbar.classList.add('collapsed');
+    // Collapse toolbar by default
+    toolbar.classList.add('collapsed');
 
-  // Show welcome message for first-time users
-  if (isFirstTime) {
-    setTimeout(() => showWelcomeMessage(shadow), 1000);
+    // Show welcome message for first-time users
+    if (isFirstTime) {
+      setTimeout(() => showWelcomeMessage(shadow), 1000);
+    }
+
+    // Setup event listeners
+    setupCollapseBehavior(shadow);
+    setupKeyboardShortcuts(shadow);
+    setupSettings(shadow);
+    setupPromptInput(shadow);
+    setupButtons(shadow);
+    setupOverlay(shadow);
+    setupRoleManager(shadow);
+    setupRolePreview(shadow);
+    setupRoleSuggestion(shadow);
+    setupRolePromptDisplay(shadow);
+
+    // Populate role dropdown
+    await populateRoleDropdown(shadow);
+
+    // Detect and apply theme
+    applyTheme(shadow);
+
+    // Watch for theme changes
+    watchThemeChanges(shadow);
+  } catch (error) {
+    logger.error('Failed to initialize toolbar features:', error);
+    // Show user-friendly error notification
+    const notificationArea = shadow.querySelector('#notification-area');
+    if (notificationArea) {
+      const notification = document.createElement('div');
+      notification.className = 'notification error';
+      notification.textContent =
+        'PromptLayer failed to initialize some features. Please refresh the page.';
+      notificationArea.appendChild(notification);
+      setTimeout(() => notification.remove(), 5000);
+    }
   }
-
-  // Setup event listeners
-  setupCollapseBehavior(shadow);
-  setupKeyboardShortcuts(shadow);
-  setupSettings(shadow);
-  setupPromptInput(shadow);
-  setupButtons(shadow);
-  setupOverlay(shadow);
-  setupRoleManager(shadow);
-  setupRolePreview(shadow);
-  setupRoleSuggestion(shadow);
-  setupRolePromptDisplay(shadow);
-
-  // Populate role dropdown
-  await populateRoleDropdown(shadow);
-
-  // Detect and apply theme
-  applyTheme(shadow);
-
-  // Watch for theme changes
-  watchThemeChanges(shadow);
 }
 
 /**

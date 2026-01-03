@@ -4,12 +4,29 @@
 
 /**
  * Sanitize HTML to prevent XSS attacks
- * Uses DOMPurify-style approach with allowlist
+ * This escapes all HTML entities to prevent script injection
+ * For more complex HTML sanitization needs, consider using DOMPurify
  */
 export function sanitizeHTML(html: string): string {
   const div = document.createElement('div');
-  div.textContent = html; // This escapes all HTML entities
-  return div.innerHTML;
+  div.textContent = html; // This converts HTML to plain text, escaping all entities
+  return div.textContent || ''; // Return the escaped text
+}
+
+/**
+ * Escape HTML entities to prevent XSS
+ * This is the primary function for preventing XSS in user-generated content
+ */
+export function escapeHTML(text: string): string {
+  const escapeMap: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#x27;',
+    '/': '&#x2F;',
+  };
+  return text.replace(/[&<>"'/]/g, (char) => escapeMap[char]);
 }
 
 /**

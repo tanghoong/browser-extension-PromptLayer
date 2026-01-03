@@ -3,6 +3,7 @@
  */
 
 import { injectToolbar } from './injectToolbar';
+import { logger } from '../utils/logger';
 
 /**
  * Supported ChatGPT domains
@@ -24,7 +25,7 @@ async function initialize() {
     return;
   }
 
-  console.log('[PromptLayer] Initializing on ChatGPT page...');
+  logger.log('Initializing on ChatGPT page...');
 
   try {
     // Wait for DOM to be ready
@@ -37,9 +38,9 @@ async function initialize() {
     // Inject toolbar
     await injectToolbar();
 
-    console.log('[PromptLayer] Successfully initialized');
+    logger.log('Successfully initialized');
   } catch (error) {
-    console.error('[PromptLayer] Initialization failed:', error);
+    logger.error('Initialization failed:', error);
   }
 }
 

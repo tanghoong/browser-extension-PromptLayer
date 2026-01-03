@@ -17,6 +17,7 @@ import {
   ROLE_CATEGORIES,
 } from '../services/roleBlueprints';
 import { debounce, generateId } from '../utils/helpers';
+import { logger } from '../utils/logger';
 import type { RoleBlueprint, RoleCategory, SuggestedRole } from '../types';
 
 // Constants
@@ -38,7 +39,7 @@ let currentSuggestedRole: SuggestedRole | null = null;
 export async function injectToolbar(): Promise<void> {
   // Prevent duplicate injection
   if (toolbarInjected) {
-    console.log('[PromptLayer] Toolbar already injected');
+    logger.log('Toolbar already injected');
     return;
   }
 
@@ -79,9 +80,9 @@ export async function injectToolbar(): Promise<void> {
     await initializeToolbar(shadowRoot);
 
     toolbarInjected = true;
-    console.log('[PromptLayer] Toolbar injected successfully');
+    logger.log('Toolbar injected successfully');
   } catch (error) {
-    console.error('[PromptLayer] Failed to inject toolbar:', error);
+    logger.error('Failed to inject toolbar:', error);
     throw error;
   }
 }
@@ -110,7 +111,7 @@ async function loadToolbarCSS(): Promise<string> {
 async function initializeToolbar(shadow: ShadowRoot): Promise<void> {
   const toolbar = shadow.querySelector('#promptlayer-toolbar');
   if (!toolbar) {
-    console.error('[PromptLayer] Toolbar element not found');
+    logger.error('Toolbar element not found');
     return;
   }
 
@@ -160,7 +161,7 @@ async function checkFirstTimeUser(): Promise<boolean> {
     }
     return false;
   } catch (error) {
-    console.error('[PromptLayer] Error checking first-time user:', error);
+    logger.error('Error checking first-time user:', error);
     return false;
   }
 }
@@ -318,7 +319,7 @@ function setupSettings(shadow: ShadowRoot): void {
       showNotification(shadow, 'success', '✓ Settings saved successfully!');
       closeModal();
     } catch (error) {
-      console.error('Error saving settings:', error);
+      logger.error('Error saving settings:', error);
       showNotification(shadow, 'error', 'Failed to save settings');
     }
   });
@@ -331,7 +332,7 @@ function setupSettings(shadow: ShadowRoot): void {
         if (apiKeyInput) apiKeyInput.value = '';
         showNotification(shadow, 'success', 'API key cleared');
       } catch (error) {
-        console.error('Error clearing API key:', error);
+        logger.error('Error clearing API key:', error);
         showNotification(shadow, 'error', 'Failed to clear API key');
       }
     }
@@ -363,7 +364,7 @@ async function loadSettings(shadow: ShadowRoot): Promise<void> {
       if (tempValue) tempValue.textContent = tempSlider.value;
     }
   } catch (error) {
-    console.error('Error loading settings:', error);
+    logger.error('Error loading settings:', error);
   }
 }
 
@@ -481,9 +482,9 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
   }
 
   try {
-    console.log('[PromptLayer] Starting enhancement...');
-    console.log('[PromptLayer] Raw prompt:', promptInput.value);
-    console.log('[PromptLayer] Role:', roleSelect?.value);
+    logger.debug('Starting enhancement...');
+    logger.debug('Raw prompt:', promptInput.value);
+    logger.debug('Role:', roleSelect?.value);
 
     const enhanced = await promptEnhancer.enhance({
       rawPrompt: promptInput.value,
@@ -491,15 +492,15 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
       context: '',
     });
 
-    console.log('[PromptLayer] Enhancement response:', enhanced);
-    console.log('[PromptLayer] Full text:', enhanced.fullText);
+    logger.debug('Enhancement response:', enhanced);
+    logger.debug('Full text:', enhanced.fullText);
 
     // Use fullText if available, otherwise construct from parts
     const enhancedText =
       enhanced.fullText ||
       `${enhanced.role}\n\n${enhanced.objective}\n\nConstraints:\n${enhanced.constraints.join('\n')}\n\nOutput Format:\n${enhanced.outputFormat}`;
 
-    console.log('[PromptLayer] Final enhanced text:', enhancedText);
+    logger.debug('Final enhanced text:', enhancedText);
     promptInput.value = enhancedText;
 
     // Update character counter
@@ -512,11 +513,11 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
 
     // Check for AI role suggestion (confidence > 50%)
     if (enhanced.suggestedRole && enhanced.suggestedRole.confidence > 0.5) {
-      console.log('[PromptLayer] AI suggests new role:', enhanced.suggestedRole);
+      logger.debug('AI suggests new role:', enhanced.suggestedRole);
       showRoleSuggestion(shadow, enhanced.suggestedRole);
     }
   } catch (error: unknown) {
-    console.error('Enhancement error:', error);
+    logger.error('Enhancement error:', error);
     const errorMessage =
       error instanceof Error && 'userMessage' in error
         ? (error as { userMessage?: string }).userMessage
@@ -575,7 +576,7 @@ async function handleSavePrompt(shadow: ShadowRoot): Promise<void> {
 
     showNotification(shadow, 'success', '✓ Prompt saved to library!');
   } catch (error: unknown) {
-    console.error('Save error:', error);
+    logger.error('Save error:', error);
     const errorMessage =
       error instanceof Error && 'userMessage' in error
         ? (error as { userMessage?: string }).userMessage
@@ -686,7 +687,7 @@ async function loadPromptLibrary(shadow: ShadowRoot): Promise<void> {
       });
     });
   } catch (error) {
-    console.error('Error loading library:', error);
+    logger.error('Error loading library:', error);
     showNotification(shadow, 'error', 'Failed to load prompt library');
   }
 }
@@ -727,7 +728,7 @@ async function loadPromptToInput(shadow: ShadowRoot, promptId: string): Promise<
 
     showNotification(shadow, 'success', '✓ Prompt loaded');
   } catch (error) {
-    console.error('Error loading prompt:', error);
+    logger.error('Error loading prompt:', error);
     showNotification(shadow, 'error', 'Failed to load prompt');
   }
 }
@@ -744,7 +745,7 @@ async function deletePrompt(shadow: ShadowRoot, promptId: string): Promise<void>
     showNotification(shadow, 'success', '✓ Prompt deleted');
     loadPromptLibrary(shadow); // Refresh library
   } catch (error) {
-    console.error('Error deleting prompt:', error);
+    logger.error('Error deleting prompt:', error);
     showNotification(shadow, 'error', 'Failed to delete prompt');
   }
 }
@@ -811,7 +812,7 @@ function setupCollapseBehavior(shadow: ShadowRoot): void {
     const isCollapsed = toolbar?.classList.contains('collapsed');
     toolbar?.classList.toggle('collapsed');
     toggleInputBtn.classList.toggle('active');
-    
+
     // Show overlay when expanded, hide when collapsed
     if (isCollapsed) {
       showOverlay(shadow);
@@ -929,7 +930,7 @@ function applyTheme(shadow: ShadowRoot): void {
   const isDark = chatGPTDark || prefersDark;
 
   toolbar.setAttribute('data-theme', isDark ? 'dark' : 'light');
-  console.log('[PromptLayer] Theme applied:', isDark ? 'dark' : 'light');
+  logger.debug('Theme applied:', isDark ? 'dark' : 'light');
 }
 
 /**
@@ -972,7 +973,7 @@ function watchThemeChanges(shadow: ShadowRoot): void {
  */
 function setupOverlay(shadow: ShadowRoot): void {
   const overlay = shadow.querySelector('#promptlayer-overlay');
-  
+
   overlay?.addEventListener('click', () => {
     hideOverlay(shadow);
     // Close any open modals/panels
@@ -1002,21 +1003,21 @@ function hideOverlay(shadow: ShadowRoot): void {
 function closeAllModals(shadow: ShadowRoot): void {
   const toolbar = shadow.querySelector('#promptlayer-toolbar');
   const toggleInputBtn = shadow.querySelector('#toggle-input-btn');
-  
+
   // Close settings modal
   const settingsModal = shadow.querySelector('#settings-modal');
   settingsModal?.classList.add('hidden');
-  
+
   // Close role manager modal
   const roleManagerModal = shadow.querySelector('#role-manager-modal');
   roleManagerModal?.classList.add('hidden');
-  
+
   // Close library panel
   const libraryPanel = shadow.querySelector('#prompt-library');
   const libraryBtn = shadow.querySelector('#library-btn');
   libraryPanel?.classList.remove('open');
   libraryBtn?.classList.remove('active');
-  
+
   // Collapse toolbar input if expanded
   if (!toolbar?.classList.contains('collapsed')) {
     toolbar?.classList.add('collapsed');
@@ -1033,7 +1034,7 @@ async function populateRoleDropdown(shadow: ShadowRoot): Promise<void> {
 
   try {
     const allRoles = await getAllRoleBlueprints();
-    
+
     // Group roles by category
     const rolesByCategory: Record<string, RoleBlueprint[]> = {};
     allRoles.forEach((role) => {
@@ -1048,8 +1049,16 @@ async function populateRoleDropdown(shadow: ShadowRoot): Promise<void> {
     roleSelect.innerHTML = '';
 
     // Add options grouped by category
-    const categoryOrder: RoleCategory[] = ['technical', 'creative', 'business', 'marketing', 'research', 'education', 'other'];
-    
+    const categoryOrder: RoleCategory[] = [
+      'technical',
+      'creative',
+      'business',
+      'marketing',
+      'research',
+      'education',
+      'other',
+    ];
+
     categoryOrder.forEach((category) => {
       const roles = rolesByCategory[category];
       if (!roles || roles.length === 0) return;
@@ -1068,9 +1077,9 @@ async function populateRoleDropdown(shadow: ShadowRoot): Promise<void> {
       roleSelect.appendChild(optgroup);
     });
 
-    console.log('[PromptLayer] Role dropdown populated with', allRoles.length, 'roles');
+    logger.debug('Role dropdown populated with', allRoles.length, 'roles');
   } catch (error) {
-    console.error('[PromptLayer] Error populating role dropdown:', error);
+    logger.error('Error populating role dropdown:', error);
   }
 }
 
@@ -1167,8 +1176,10 @@ function setupRolePreview(shadow: ShadowRoot): void {
 
   // Hide on click outside
   shadow.addEventListener('click', (e) => {
-    if (!(e.target as Element)?.closest('#role-preview-tooltip') && 
-        !(e.target as Element)?.closest('#role-preview-btn')) {
+    if (
+      !(e.target as Element)?.closest('#role-preview-tooltip') &&
+      !(e.target as Element)?.closest('#role-preview-btn')
+    ) {
       hidePreview();
     }
   });
@@ -1263,9 +1274,10 @@ function setupRoleManager(shadow: ShadowRoot): void {
   // Export roles
   exportBtn?.addEventListener('click', async () => {
     try {
-      const includeDefaults = (shadow.querySelector<HTMLInputElement>('#export-include-defaults'))?.checked || false;
+      const includeDefaults =
+        shadow.querySelector<HTMLInputElement>('#export-include-defaults')?.checked || false;
       const jsonData = await exportRoles(includeDefaults);
-      
+
       // Download file
       const blob = new Blob([jsonData], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -1277,7 +1289,7 @@ function setupRoleManager(shadow: ShadowRoot): void {
 
       showNotification(shadow, 'success', '✓ Roles exported successfully!');
     } catch (error) {
-      console.error('Export error:', error);
+      logger.error('Export error:', error);
       showNotification(shadow, 'error', 'Failed to export roles');
     }
   });
@@ -1308,7 +1320,7 @@ function setupRoleManager(shadow: ShadowRoot): void {
   importDropZone?.addEventListener('drop', async (e) => {
     e.preventDefault();
     importDropZone.classList.remove('drag-over');
-    
+
     const file = (e as DragEvent).dataTransfer?.files?.[0];
     if (file && file.type === 'application/json') {
       await handleRoleImport(shadow, file);
@@ -1331,18 +1343,19 @@ async function loadRolesList(shadow: ShadowRoot): Promise<void> {
     // Apply search filter
     const searchInput = shadow.querySelector<HTMLInputElement>('#roles-search');
     const searchTerm = searchInput?.value.toLowerCase() || '';
-    
+
     if (searchTerm) {
-      roles = roles.filter((role) =>
-        role.name.toLowerCase().includes(searchTerm) ||
-        role.description.toLowerCase().includes(searchTerm)
+      roles = roles.filter(
+        (role) =>
+          role.name.toLowerCase().includes(searchTerm) ||
+          role.description.toLowerCase().includes(searchTerm)
       );
     }
 
     // Apply category filter
     const categoryFilter = shadow.querySelector<HTMLSelectElement>('#roles-category-filter');
     const selectedCategory = categoryFilter?.value || '';
-    
+
     if (selectedCategory) {
       roles = roles.filter((role) => role.category === selectedCategory);
     }
@@ -1363,7 +1376,9 @@ async function loadRolesList(shadow: ShadowRoot): Promise<void> {
       return;
     }
 
-    rolesContent.innerHTML = roles.map((role) => `
+    rolesContent.innerHTML = roles
+      .map(
+        (role) => `
       <div class="role-card ${role.isDefault ? 'default' : ''}" data-role-id="${role.id}">
         <div class="role-card-emoji">${role.emoji || '📋'}</div>
         <div class="role-card-content">
@@ -1376,13 +1391,19 @@ async function loadRolesList(shadow: ShadowRoot): Promise<void> {
         </div>
         <div class="role-card-actions">
           <button class="duplicate-btn" data-role-id="${role.id}" title="Duplicate">📋</button>
-          ${!role.isDefault ? `
+          ${
+            !role.isDefault
+              ? `
             <button class="edit-btn" data-role-id="${role.id}" title="Edit">✏️</button>
             <button class="delete-btn" data-role-id="${role.id}" title="Delete">🗑️</button>
-          ` : ''}
+          `
+              : ''
+          }
         </div>
       </div>
-    `).join('');
+    `
+      )
+      .join('');
 
     // Add event listeners to role cards
     rolesContent.querySelectorAll('.duplicate-btn').forEach((btn) => {
@@ -1414,9 +1435,8 @@ async function loadRolesList(shadow: ShadowRoot): Promise<void> {
         }
       });
     });
-
   } catch (error) {
-    console.error('Error loading roles:', error);
+    logger.error('Error loading roles:', error);
     rolesContent.innerHTML = '<div class="roles-empty"><p>Error loading roles</p></div>';
   }
 }
@@ -1443,7 +1463,11 @@ async function handleRoleFormSubmit(shadow: ShadowRoot): Promise<void> {
   const systemPrompt = formSystemPrompt?.value.trim() || '';
   const thinkingDepth = (formDepth?.value || 'medium') as 'shallow' | 'medium' | 'deep';
   const outputStyle = formOutputStyle?.value.trim() || 'Custom';
-  const constraints = formConstraints?.value.split('\n').map((c) => c.trim()).filter((c) => c) || [];
+  const constraints =
+    formConstraints?.value
+      .split('\n')
+      .map((c) => c.trim())
+      .filter((c) => c) || [];
 
   // Validation
   if (!name || !description || !systemPrompt) {
@@ -1486,9 +1510,8 @@ async function handleRoleFormSubmit(shadow: ShadowRoot): Promise<void> {
     shadow.querySelector('[data-tab="roles-list"]')?.classList.add('active');
     shadow.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
     shadow.querySelector('#roles-list')?.classList.add('active');
-
   } catch (error) {
-    console.error('Role form error:', error);
+    logger.error('Role form error:', error);
     showNotification(shadow, 'error', 'Failed to save role');
   }
 }
@@ -1499,7 +1522,7 @@ async function handleRoleFormSubmit(shadow: ShadowRoot): Promise<void> {
 function resetRoleForm(shadow: ShadowRoot): void {
   const form = shadow.querySelector<HTMLFormElement>('#role-form');
   const submitBtn = shadow.querySelector('#role-form-submit');
-  
+
   form?.reset();
   (shadow.querySelector('#role-form-id') as HTMLInputElement).value = '';
   if (submitBtn) submitBtn.textContent = 'Create Role';
@@ -1518,10 +1541,12 @@ async function handleEditRole(shadow: ShadowRoot, roleId: string): Promise<void>
   (shadow.querySelector('#role-form-emoji') as HTMLInputElement).value = role.emoji || '';
   (shadow.querySelector('#role-form-category') as HTMLSelectElement).value = role.category;
   (shadow.querySelector('#role-form-description') as HTMLInputElement).value = role.description;
-  (shadow.querySelector('#role-form-system-prompt') as HTMLTextAreaElement).value = role.systemPrompt;
+  (shadow.querySelector('#role-form-system-prompt') as HTMLTextAreaElement).value =
+    role.systemPrompt;
   (shadow.querySelector('#role-form-depth') as HTMLSelectElement).value = role.thinkingDepth;
   (shadow.querySelector('#role-form-output-style') as HTMLInputElement).value = role.outputStyle;
-  (shadow.querySelector('#role-form-constraints') as HTMLTextAreaElement).value = role.constraints.join('\n');
+  (shadow.querySelector('#role-form-constraints') as HTMLTextAreaElement).value =
+    role.constraints.join('\n');
 
   // Update submit button text
   const submitBtn = shadow.querySelector('#role-form-submit');
@@ -1546,7 +1571,7 @@ async function handleDuplicateRole(shadow: ShadowRoot, roleId: string): Promise<
       await populateRoleDropdown(shadow);
     }
   } catch (error) {
-    console.error('Duplicate error:', error);
+    logger.error('Duplicate error:', error);
     showNotification(shadow, 'error', 'Failed to duplicate role');
   }
 }
@@ -1567,7 +1592,7 @@ async function handleDeleteRole(shadow: ShadowRoot, roleId: string): Promise<voi
       showNotification(shadow, 'error', 'Cannot delete default roles');
     }
   } catch (error) {
-    console.error('Delete error:', error);
+    logger.error('Delete error:', error);
     showNotification(shadow, 'error', 'Failed to delete role');
   }
 }
@@ -1577,10 +1602,12 @@ async function handleDeleteRole(shadow: ShadowRoot, roleId: string): Promise<voi
  */
 async function handleRoleImport(shadow: ShadowRoot, file: File): Promise<void> {
   const importStatus = shadow.querySelector('#import-status');
-  
+
   try {
     const text = await file.text();
-    const strategyInput = shadow.querySelector<HTMLInputElement>('input[name="import-strategy"]:checked');
+    const strategyInput = shadow.querySelector<HTMLInputElement>(
+      'input[name="import-strategy"]:checked'
+    );
     const strategy = (strategyInput?.value || 'merge') as 'replace' | 'merge';
 
     const result = await importRoles(text, strategy);
@@ -1602,7 +1629,7 @@ async function handleRoleImport(shadow: ShadowRoot, file: File): Promise<void> {
 
     showNotification(shadow, 'success', `✓ Imported ${result.imported} roles!`);
   } catch (error) {
-    console.error('Import error:', error);
+    logger.error('Import error:', error);
     if (importStatus) {
       importStatus.classList.remove('hidden', 'success');
       importStatus.classList.add('error');
@@ -1641,7 +1668,7 @@ function setupRoleSuggestion(shadow: ShadowRoot): void {
         toast?.classList.add('hidden');
         currentSuggestedRole = null;
       } catch (error) {
-        console.error('Failed to add suggested role:', error);
+        logger.error('Failed to add suggested role:', error);
         showNotification(shadow, 'error', 'Failed to add role');
       }
     }
@@ -1658,14 +1685,14 @@ function setupRoleSuggestion(shadow: ShadowRoot): void {
  */
 function showRoleSuggestion(shadow: ShadowRoot, suggestedRole: SuggestedRole): void {
   currentSuggestedRole = suggestedRole;
-  
+
   const toast = shadow.querySelector('#role-suggestion-toast');
   const suggestionText = shadow.querySelector('#suggestion-text');
-  
+
   if (suggestionText) {
     suggestionText.textContent = `Add "${suggestedRole.name}" (${ROLE_CATEGORIES[suggestedRole.category]?.label || suggestedRole.category}) - ${suggestedRole.reason}`;
   }
-  
+
   toast?.classList.remove('hidden');
 
   // Auto-dismiss after 15 seconds
@@ -1703,7 +1730,7 @@ export function removeToolbar(): void {
     try {
       cleanup();
     } catch (error) {
-      console.warn('[PromptLayer] Cleanup function failed:', error);
+      logger.warn('Cleanup function failed:', error);
     }
   });
   eventCleanupFunctions = [];
@@ -1713,7 +1740,7 @@ export function removeToolbar(): void {
     try {
       themeObserver.disconnect();
     } catch (error) {
-      console.warn('[PromptLayer] Theme observer disconnect failed:', error);
+      logger.warn('Theme observer disconnect failed:', error);
     }
     themeObserver = null;
   }

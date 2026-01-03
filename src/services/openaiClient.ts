@@ -6,6 +6,7 @@
 import type { OpenAIConfig, ChatCompletionParams } from '../types';
 import { ErrorType, PromptLayerError } from '../types';
 import { storageService } from './storage';
+import { logger } from '../utils/logger';
 
 /**
  * OpenAI API endpoint
@@ -268,11 +269,9 @@ class OpenAIClient {
         currentMonth,
       });
 
-      console.log(
-        `[PromptLayer] Tokens: ${promptTokens + completionTokens}, Cost: $${totalCost.toFixed(6)}`
-      );
+      logger.debug(`Tokens: ${promptTokens + completionTokens}, Cost: $${totalCost.toFixed(6)}`);
     } catch (error) {
-      console.error('Error tracking usage:', error);
+      logger.error('Error tracking usage:', error);
     }
   }
 

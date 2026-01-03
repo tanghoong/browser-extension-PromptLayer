@@ -390,7 +390,9 @@ export async function duplicateRole(id: string): Promise<RoleBlueprint | null> {
  */
 export async function exportRoles(includeDefaults = false): Promise<string> {
   const customRoles = await storageService.getRoles();
-  const rolesToExport = includeDefaults ? [...customRoles, ...DEFAULT_ROLE_BLUEPRINTS] : customRoles;
+  const rolesToExport = includeDefaults
+    ? [...customRoles, ...DEFAULT_ROLE_BLUEPRINTS]
+    : customRoles;
 
   return JSON.stringify(
     {
@@ -447,8 +449,8 @@ export async function importRoles(
 
       // Validate category or default to 'other'
       const validCategories = Object.keys(ROLE_CATEGORIES) as RoleCategory[];
-      const roleCategory: RoleCategory = validCategories.includes(role.category) 
-        ? role.category 
+      const roleCategory: RoleCategory = validCategories.includes(role.category)
+        ? role.category
         : 'other';
 
       // Ensure custom role properties

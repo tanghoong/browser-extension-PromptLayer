@@ -5,7 +5,19 @@
 
 import { promptEnhancer } from '../services/promptEnhancer';
 import { storageService } from '../services/storage';
+import {
+  getAllRoleBlueprints,
+  getRoleBlueprint,
+  createCustomRole,
+  updateRole,
+  deleteRole,
+  duplicateRole,
+  exportRoles,
+  importRoles,
+  ROLE_CATEGORIES,
+} from '../services/roleBlueprints';
 import { debounce, generateId } from '../utils/helpers';
+import type { RoleBlueprint, RoleCategory, SuggestedRole } from '../types';
 
 // Constants
 const MIN_API_KEY_LENGTH = 48; // OpenAI API keys are typically 51+ characters
@@ -18,6 +30,7 @@ let toolbarInjected = false;
 let shadowRoot: ShadowRoot | null = null;
 let themeObserver: MutationObserver | null = null;
 let eventCleanupFunctions: (() => void)[] = [];
+let currentSuggestedRole: SuggestedRole | null = null;
 
 /**
  * Create and inject the toolbar
@@ -106,10 +119,6 @@ async function initializeToolbar(shadow: ShadowRoot): Promise<void> {
 
   // Collapse toolbar by default
   toolbar.classList.add('collapsed');
-  const collapseBtn = shadow.querySelector('#collapse-btn');
-  if (collapseBtn) {
-    collapseBtn.textContent = '▼';
-  }
 
   // Show welcome message for first-time users
   if (isFirstTime) {
@@ -122,6 +131,14 @@ async function initializeToolbar(shadow: ShadowRoot): Promise<void> {
   setupSettings(shadow);
   setupPromptInput(shadow);
   setupButtons(shadow);
+  setupOverlay(shadow);
+  setupRoleManager(shadow);
+  setupRolePreview(shadow);
+  setupRoleSuggestion(shadow);
+  setupRolePromptDisplay(shadow);
+
+  // Populate role dropdown
+  await populateRoleDropdown(shadow);
 
   // Detect and apply theme
   applyTheme(shadow);
@@ -200,7 +217,7 @@ function showWelcomeMessage(shadow: ShadowRoot): void {
 function setupSettings(shadow: ShadowRoot): void {
   const settingsBtn = shadow.querySelector('#settings-btn');
   const settingsModal = shadow.querySelector('#settings-modal');
-  const modalClose = shadow.querySelector('.modal-close');
+  const modalClose = shadow.querySelector('#settings-modal .modal-close');
   const saveSettingsBtn = shadow.querySelector('#save-settings-btn');
   const clearApiKeyBtn = shadow.querySelector('#clear-api-key-btn');
   const toggleApiKeyBtn = shadow.querySelector('#toggle-api-key');
@@ -214,6 +231,7 @@ function setupSettings(shadow: ShadowRoot): void {
   settingsBtn?.addEventListener('click', () => {
     // Store reference to the settings button for focus restoration
     previousActiveElement = settingsBtn as Element;
+    showOverlay(shadow);
     settingsModal?.classList.remove('hidden');
     loadSettings(shadow);
 
@@ -226,6 +244,7 @@ function setupSettings(shadow: ShadowRoot): void {
   // Close settings and restore focus
   const closeModal = () => {
     settingsModal?.classList.add('hidden');
+    hideOverlay(shadow);
     // Restore focus to the element that opened the modal
     if (previousActiveElement && previousActiveElement instanceof HTMLElement) {
       previousActiveElement.focus();
@@ -402,7 +421,9 @@ function setupButtons(shadow: ShadowRoot): void {
     if (isOpen) {
       libraryPanel?.classList.remove('open');
       libraryBtn.classList.remove('active');
+      hideOverlay(shadow);
     } else {
+      showOverlay(shadow);
       libraryPanel?.classList.add('open');
       libraryBtn.classList.add('active');
       loadPromptLibrary(shadow);
@@ -413,6 +434,7 @@ function setupButtons(shadow: ShadowRoot): void {
   libraryClose?.addEventListener('click', () => {
     libraryPanel?.classList.remove('open');
     libraryBtn?.classList.remove('active');
+    hideOverlay(shadow);
   });
 
   // Setup library search and filters with debouncing
@@ -465,7 +487,7 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
 
     const enhanced = await promptEnhancer.enhance({
       rawPrompt: promptInput.value,
-      roleId: roleSelect?.value || 'general-assistant',
+      roleId: roleSelect?.value || 'engineer',
       context: '',
     });
 
@@ -487,6 +509,12 @@ async function handleEnhance(shadow: ShadowRoot): Promise<void> {
     }
 
     showNotification(shadow, 'success', '✓ Prompt enhanced successfully!');
+
+    // Check for AI role suggestion (confidence > 50%)
+    if (enhanced.suggestedRole && enhanced.suggestedRole.confidence > 0.5) {
+      console.log('[PromptLayer] AI suggests new role:', enhanced.suggestedRole);
+      showRoleSuggestion(shadow, enhanced.suggestedRole);
+    }
   } catch (error: unknown) {
     console.error('Enhancement error:', error);
     const errorMessage =
@@ -768,7 +796,6 @@ function showNotification(shadow: ShadowRoot, type: NotificationType, message: s
 function setupCollapseBehavior(shadow: ShadowRoot): void {
   const toolbar = shadow.querySelector('#promptlayer-toolbar');
   const toggleHandle = shadow.querySelector('#toggle-handle');
-  const collapseBtn = shadow.querySelector('#collapse-btn');
   const toggleInputBtn = shadow.querySelector('#toggle-input-btn');
 
   // Toggle handle - shows toolbar when clicked (when hidden)
@@ -779,21 +806,18 @@ function setupCollapseBehavior(shadow: ShadowRoot): void {
     }
   });
 
-  // Collapse button (chevron) - collapses/expands the content area
-  collapseBtn?.addEventListener('click', () => {
-    toolbar?.classList.toggle('collapsed');
-    // Update toggle input button state to match
-    if (toolbar?.classList.contains('collapsed')) {
-      toggleInputBtn?.classList.remove('active');
-    } else {
-      toggleInputBtn?.classList.add('active');
-    }
-  });
-
-  // Toggle input area button - same as collapse but with active state
+  // Toggle input area button - collapses/expands the content area with active state
   toggleInputBtn?.addEventListener('click', () => {
+    const isCollapsed = toolbar?.classList.contains('collapsed');
     toolbar?.classList.toggle('collapsed');
     toggleInputBtn.classList.toggle('active');
+    
+    // Show overlay when expanded, hide when collapsed
+    if (isCollapsed) {
+      showOverlay(shadow);
+    } else {
+      hideOverlay(shadow);
+    }
   });
 
   // Show toolbar when mouse near top of screen (if hidden)
@@ -941,6 +965,733 @@ function watchThemeChanges(shadow: ShadowRoot): void {
       themeObserver = null;
     }
   });
+}
+
+/**
+ * Setup overlay click-to-dismiss behavior
+ */
+function setupOverlay(shadow: ShadowRoot): void {
+  const overlay = shadow.querySelector('#promptlayer-overlay');
+  
+  overlay?.addEventListener('click', () => {
+    hideOverlay(shadow);
+    // Close any open modals/panels
+    closeAllModals(shadow);
+  });
+}
+
+/**
+ * Show the blur overlay
+ */
+function showOverlay(shadow: ShadowRoot): void {
+  const overlay = shadow.querySelector('#promptlayer-overlay');
+  overlay?.classList.remove('hidden');
+}
+
+/**
+ * Hide the blur overlay
+ */
+function hideOverlay(shadow: ShadowRoot): void {
+  const overlay = shadow.querySelector('#promptlayer-overlay');
+  overlay?.classList.add('hidden');
+}
+
+/**
+ * Close all open modals and panels
+ */
+function closeAllModals(shadow: ShadowRoot): void {
+  const toolbar = shadow.querySelector('#promptlayer-toolbar');
+  const toggleInputBtn = shadow.querySelector('#toggle-input-btn');
+  
+  // Close settings modal
+  const settingsModal = shadow.querySelector('#settings-modal');
+  settingsModal?.classList.add('hidden');
+  
+  // Close role manager modal
+  const roleManagerModal = shadow.querySelector('#role-manager-modal');
+  roleManagerModal?.classList.add('hidden');
+  
+  // Close library panel
+  const libraryPanel = shadow.querySelector('#prompt-library');
+  const libraryBtn = shadow.querySelector('#library-btn');
+  libraryPanel?.classList.remove('open');
+  libraryBtn?.classList.remove('active');
+  
+  // Collapse toolbar input if expanded
+  if (!toolbar?.classList.contains('collapsed')) {
+    toolbar?.classList.add('collapsed');
+    toggleInputBtn?.classList.remove('active');
+  }
+}
+
+/**
+ * Populate role dropdown with all roles (custom + defaults)
+ */
+async function populateRoleDropdown(shadow: ShadowRoot): Promise<void> {
+  const roleSelect = shadow.querySelector<HTMLSelectElement>('#role-select');
+  if (!roleSelect) return;
+
+  try {
+    const allRoles = await getAllRoleBlueprints();
+    
+    // Group roles by category
+    const rolesByCategory: Record<string, RoleBlueprint[]> = {};
+    allRoles.forEach((role) => {
+      const category = role.category || 'other';
+      if (!rolesByCategory[category]) {
+        rolesByCategory[category] = [];
+      }
+      rolesByCategory[category].push(role);
+    });
+
+    // Clear existing options
+    roleSelect.innerHTML = '';
+
+    // Add options grouped by category
+    const categoryOrder: RoleCategory[] = ['technical', 'creative', 'business', 'marketing', 'research', 'education', 'other'];
+    
+    categoryOrder.forEach((category) => {
+      const roles = rolesByCategory[category];
+      if (!roles || roles.length === 0) return;
+
+      const optgroup = document.createElement('optgroup');
+      optgroup.label = `${ROLE_CATEGORIES[category].emoji} ${ROLE_CATEGORIES[category].label}`;
+
+      roles.forEach((role) => {
+        const option = document.createElement('option');
+        option.value = role.id;
+        option.textContent = `${role.emoji || ''} ${role.name}${!role.isDefault ? ' ⭐' : ''}`;
+        option.dataset.roleId = role.id;
+        optgroup.appendChild(option);
+      });
+
+      roleSelect.appendChild(optgroup);
+    });
+
+    console.log('[PromptLayer] Role dropdown populated with', allRoles.length, 'roles');
+  } catch (error) {
+    console.error('[PromptLayer] Error populating role dropdown:', error);
+  }
+}
+
+/**
+ * Setup role prompt display - shows system prompt when role is selected
+ */
+function setupRolePromptDisplay(shadow: ShadowRoot): void {
+  const roleSelect = shadow.querySelector<HTMLSelectElement>('#role-select');
+  const rolePromptDisplay = shadow.querySelector('#role-prompt-display');
+  const rolePromptText = shadow.querySelector('#role-prompt-text');
+
+  const updateRolePrompt = async () => {
+    if (!roleSelect || !rolePromptDisplay || !rolePromptText) return;
+
+    const selectedRoleId = roleSelect.value;
+    const role = await getRoleBlueprint(selectedRoleId);
+
+    if (!role) {
+      rolePromptDisplay.classList.remove('visible');
+      return;
+    }
+
+    // Display the system prompt
+    rolePromptText.textContent = role.systemPrompt;
+    rolePromptDisplay.classList.add('visible');
+  };
+
+  // Update on role selection change
+  roleSelect?.addEventListener('change', updateRolePrompt);
+
+  // Initial update
+  updateRolePrompt();
+}
+
+/**
+ * Setup role preview functionality
+ */
+function setupRolePreview(shadow: ShadowRoot): void {
+  const roleSelect = shadow.querySelector<HTMLSelectElement>('#role-select');
+  const previewBtn = shadow.querySelector('#role-preview-btn');
+  const previewTooltip = shadow.querySelector('#role-preview-tooltip');
+
+  let previewTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const showPreview = async () => {
+    if (!roleSelect || !previewTooltip) return;
+
+    const selectedRoleId = roleSelect.value;
+    const role = await getRoleBlueprint(selectedRoleId);
+
+    if (!role) {
+      previewTooltip.classList.add('hidden');
+      return;
+    }
+
+    // Populate preview
+    const emojiEl = shadow.querySelector('#role-preview-emoji');
+    const nameEl = shadow.querySelector('#role-preview-name');
+    const categoryEl = shadow.querySelector('#role-preview-category');
+    const descEl = shadow.querySelector('#role-preview-description');
+    const depthEl = shadow.querySelector('#role-preview-depth');
+    const styleEl = shadow.querySelector('#role-preview-style');
+
+    if (emojiEl) emojiEl.textContent = role.emoji || '📋';
+    if (nameEl) nameEl.textContent = role.name;
+    if (categoryEl) {
+      categoryEl.textContent = ROLE_CATEGORIES[role.category]?.label || role.category;
+      categoryEl.className = 'role-category-badge';
+    }
+    if (descEl) descEl.textContent = role.description;
+    if (depthEl) depthEl.textContent = `Depth: ${role.thinkingDepth}`;
+    if (styleEl) styleEl.textContent = `Style: ${role.outputStyle}`;
+
+    previewTooltip.classList.remove('hidden');
+  };
+
+  const hidePreview = () => {
+    if (previewTimeout) {
+      clearTimeout(previewTimeout);
+      previewTimeout = null;
+    }
+    previewTooltip?.classList.add('hidden');
+  };
+
+  // Preview button click
+  previewBtn?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (previewTooltip?.classList.contains('hidden')) {
+      await showPreview();
+    } else {
+      hidePreview();
+    }
+  });
+
+  // Hide on click outside
+  shadow.addEventListener('click', (e) => {
+    if (!(e.target as Element)?.closest('#role-preview-tooltip') && 
+        !(e.target as Element)?.closest('#role-preview-btn')) {
+      hidePreview();
+    }
+  });
+
+  // Update preview when selection changes
+  roleSelect?.addEventListener('change', () => {
+    if (!previewTooltip?.classList.contains('hidden')) {
+      showPreview();
+    }
+  });
+}
+
+/**
+ * Setup role manager modal
+ */
+function setupRoleManager(shadow: ShadowRoot): void {
+  const rolesBtn = shadow.querySelector('#roles-btn');
+  const roleManagerModal = shadow.querySelector('#role-manager-modal');
+  const roleManagerClose = shadow.querySelector('#role-manager-close');
+  const tabBtns = shadow.querySelectorAll('.tab-btn');
+  const roleForm = shadow.querySelector<HTMLFormElement>('#role-form');
+  const roleFormCancel = shadow.querySelector('#role-form-cancel');
+  const exportBtn = shadow.querySelector('#export-roles-btn');
+  const importBrowseBtn = shadow.querySelector('#import-browse-btn');
+  const importFileInput = shadow.querySelector<HTMLInputElement>('#import-file-input');
+  const importDropZone = shadow.querySelector('#import-drop-zone');
+
+  // Open role manager
+  rolesBtn?.addEventListener('click', () => {
+    showOverlay(shadow);
+    roleManagerModal?.classList.remove('hidden');
+    loadRolesList(shadow);
+  });
+
+  // Close role manager
+  const closeRoleManager = () => {
+    roleManagerModal?.classList.add('hidden');
+    hideOverlay(shadow);
+    resetRoleForm(shadow);
+  };
+
+  roleManagerClose?.addEventListener('click', closeRoleManager);
+
+  // Tab switching
+  tabBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tabId = (btn as HTMLElement).dataset.tab;
+      if (!tabId) return;
+
+      // Update active tab button
+      tabBtns.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      // Show corresponding content
+      shadow.querySelectorAll('.tab-content').forEach((content) => {
+        content.classList.remove('active');
+      });
+      shadow.querySelector(`#${tabId}`)?.classList.add('active');
+
+      // Reset form when switching to create tab
+      if (tabId === 'create-role') {
+        resetRoleForm(shadow);
+      }
+    });
+  });
+
+  // Role form submission
+  roleForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    await handleRoleFormSubmit(shadow);
+  });
+
+  // Cancel form
+  roleFormCancel?.addEventListener('click', () => {
+    resetRoleForm(shadow);
+    // Switch to roles list tab
+    tabBtns.forEach((b) => b.classList.remove('active'));
+    shadow.querySelector('[data-tab="roles-list"]')?.classList.add('active');
+    shadow.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
+    shadow.querySelector('#roles-list')?.classList.add('active');
+  });
+
+  // Search and filter roles
+  const rolesSearch = shadow.querySelector<HTMLInputElement>('#roles-search');
+  const categoryFilter = shadow.querySelector<HTMLSelectElement>('#roles-category-filter');
+
+  const debouncedSearch = debounce(() => loadRolesList(shadow), 300);
+
+  rolesSearch?.addEventListener('input', debouncedSearch);
+  categoryFilter?.addEventListener('change', () => loadRolesList(shadow));
+
+  // Export roles
+  exportBtn?.addEventListener('click', async () => {
+    try {
+      const includeDefaults = (shadow.querySelector<HTMLInputElement>('#export-include-defaults'))?.checked || false;
+      const jsonData = await exportRoles(includeDefaults);
+      
+      // Download file
+      const blob = new Blob([jsonData], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `promptlayer-roles-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      showNotification(shadow, 'success', '✓ Roles exported successfully!');
+    } catch (error) {
+      console.error('Export error:', error);
+      showNotification(shadow, 'error', 'Failed to export roles');
+    }
+  });
+
+  // Import roles - browse button
+  importBrowseBtn?.addEventListener('click', () => {
+    importFileInput?.click();
+  });
+
+  // Import roles - file input change
+  importFileInput?.addEventListener('change', async (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (file) {
+      await handleRoleImport(shadow, file);
+    }
+  });
+
+  // Import roles - drag and drop
+  importDropZone?.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    importDropZone.classList.add('drag-over');
+  });
+
+  importDropZone?.addEventListener('dragleave', () => {
+    importDropZone.classList.remove('drag-over');
+  });
+
+  importDropZone?.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    importDropZone.classList.remove('drag-over');
+    
+    const file = (e as DragEvent).dataTransfer?.files?.[0];
+    if (file && file.type === 'application/json') {
+      await handleRoleImport(shadow, file);
+    } else {
+      showNotification(shadow, 'error', 'Please drop a JSON file');
+    }
+  });
+}
+
+/**
+ * Load and display roles list
+ */
+async function loadRolesList(shadow: ShadowRoot): Promise<void> {
+  const rolesContent = shadow.querySelector('#roles-list-content');
+  if (!rolesContent) return;
+
+  try {
+    let roles = await getAllRoleBlueprints();
+
+    // Apply search filter
+    const searchInput = shadow.querySelector<HTMLInputElement>('#roles-search');
+    const searchTerm = searchInput?.value.toLowerCase() || '';
+    
+    if (searchTerm) {
+      roles = roles.filter((role) =>
+        role.name.toLowerCase().includes(searchTerm) ||
+        role.description.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    // Apply category filter
+    const categoryFilter = shadow.querySelector<HTMLSelectElement>('#roles-category-filter');
+    const selectedCategory = categoryFilter?.value || '';
+    
+    if (selectedCategory) {
+      roles = roles.filter((role) => role.category === selectedCategory);
+    }
+
+    // Sort: custom roles first, then defaults
+    roles.sort((a, b) => {
+      if (a.isDefault === b.isDefault) return a.name.localeCompare(b.name);
+      return a.isDefault ? 1 : -1;
+    });
+
+    if (roles.length === 0) {
+      rolesContent.innerHTML = `
+        <div class="roles-empty">
+          <div class="roles-empty-icon">📋</div>
+          <p>No roles found</p>
+        </div>
+      `;
+      return;
+    }
+
+    rolesContent.innerHTML = roles.map((role) => `
+      <div class="role-card ${role.isDefault ? 'default' : ''}" data-role-id="${role.id}">
+        <div class="role-card-emoji">${role.emoji || '📋'}</div>
+        <div class="role-card-content">
+          <div class="role-card-header">
+            <span class="role-card-name">${escapeHtml(role.name)}</span>
+            <span class="role-category-badge">${ROLE_CATEGORIES[role.category]?.label || role.category}</span>
+            ${role.isDefault ? '<span class="badge-default">Default</span>' : ''}
+          </div>
+          <div class="role-card-description">${escapeHtml(role.description)}</div>
+        </div>
+        <div class="role-card-actions">
+          <button class="duplicate-btn" data-role-id="${role.id}" title="Duplicate">📋</button>
+          ${!role.isDefault ? `
+            <button class="edit-btn" data-role-id="${role.id}" title="Edit">✏️</button>
+            <button class="delete-btn" data-role-id="${role.id}" title="Delete">🗑️</button>
+          ` : ''}
+        </div>
+      </div>
+    `).join('');
+
+    // Add event listeners to role cards
+    rolesContent.querySelectorAll('.duplicate-btn').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const roleId = (e.target as HTMLElement).dataset.roleId;
+        if (roleId) {
+          await handleDuplicateRole(shadow, roleId);
+        }
+      });
+    });
+
+    rolesContent.querySelectorAll('.edit-btn').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const roleId = (e.target as HTMLElement).dataset.roleId;
+        if (roleId) {
+          await handleEditRole(shadow, roleId);
+        }
+      });
+    });
+
+    rolesContent.querySelectorAll('.delete-btn').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const roleId = (e.target as HTMLElement).dataset.roleId;
+        if (roleId) {
+          await handleDeleteRole(shadow, roleId);
+        }
+      });
+    });
+
+  } catch (error) {
+    console.error('Error loading roles:', error);
+    rolesContent.innerHTML = '<div class="roles-empty"><p>Error loading roles</p></div>';
+  }
+}
+
+/**
+ * Handle role form submission (create/edit)
+ */
+async function handleRoleFormSubmit(shadow: ShadowRoot): Promise<void> {
+  const formId = shadow.querySelector<HTMLInputElement>('#role-form-id');
+  const formName = shadow.querySelector<HTMLInputElement>('#role-form-name');
+  const formEmoji = shadow.querySelector<HTMLInputElement>('#role-form-emoji');
+  const formCategory = shadow.querySelector<HTMLSelectElement>('#role-form-category');
+  const formDescription = shadow.querySelector<HTMLInputElement>('#role-form-description');
+  const formSystemPrompt = shadow.querySelector<HTMLTextAreaElement>('#role-form-system-prompt');
+  const formDepth = shadow.querySelector<HTMLSelectElement>('#role-form-depth');
+  const formOutputStyle = shadow.querySelector<HTMLInputElement>('#role-form-output-style');
+  const formConstraints = shadow.querySelector<HTMLTextAreaElement>('#role-form-constraints');
+
+  const roleId = formId?.value || '';
+  const name = formName?.value.trim() || '';
+  const emoji = formEmoji?.value.trim() || '';
+  const category = (formCategory?.value || 'other') as RoleCategory;
+  const description = formDescription?.value.trim() || '';
+  const systemPrompt = formSystemPrompt?.value.trim() || '';
+  const thinkingDepth = (formDepth?.value || 'medium') as 'shallow' | 'medium' | 'deep';
+  const outputStyle = formOutputStyle?.value.trim() || 'Custom';
+  const constraints = formConstraints?.value.split('\n').map((c) => c.trim()).filter((c) => c) || [];
+
+  // Validation
+  if (!name || !description || !systemPrompt) {
+    showNotification(shadow, 'error', 'Please fill in all required fields');
+    return;
+  }
+
+  try {
+    if (roleId) {
+      // Update existing role
+      await updateRole(roleId, {
+        name,
+        emoji,
+        category,
+        description,
+        systemPrompt,
+        thinkingDepth,
+        outputStyle,
+        constraints,
+      });
+      showNotification(shadow, 'success', '✓ Role updated successfully!');
+    } else {
+      // Create new role
+      await createCustomRole(name, description, systemPrompt, category, {
+        thinkingDepth,
+        outputStyle,
+        constraints,
+        emoji,
+      });
+      showNotification(shadow, 'success', '✓ Role created successfully!');
+    }
+
+    // Refresh UI
+    await loadRolesList(shadow);
+    await populateRoleDropdown(shadow);
+    resetRoleForm(shadow);
+
+    // Switch to roles list tab
+    shadow.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+    shadow.querySelector('[data-tab="roles-list"]')?.classList.add('active');
+    shadow.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
+    shadow.querySelector('#roles-list')?.classList.add('active');
+
+  } catch (error) {
+    console.error('Role form error:', error);
+    showNotification(shadow, 'error', 'Failed to save role');
+  }
+}
+
+/**
+ * Reset role form to default state
+ */
+function resetRoleForm(shadow: ShadowRoot): void {
+  const form = shadow.querySelector<HTMLFormElement>('#role-form');
+  const submitBtn = shadow.querySelector('#role-form-submit');
+  
+  form?.reset();
+  (shadow.querySelector('#role-form-id') as HTMLInputElement).value = '';
+  if (submitBtn) submitBtn.textContent = 'Create Role';
+}
+
+/**
+ * Handle edit role - populate form with role data
+ */
+async function handleEditRole(shadow: ShadowRoot, roleId: string): Promise<void> {
+  const role = await getRoleBlueprint(roleId);
+  if (!role || role.isDefault) return;
+
+  // Populate form
+  (shadow.querySelector('#role-form-id') as HTMLInputElement).value = role.id;
+  (shadow.querySelector('#role-form-name') as HTMLInputElement).value = role.name;
+  (shadow.querySelector('#role-form-emoji') as HTMLInputElement).value = role.emoji || '';
+  (shadow.querySelector('#role-form-category') as HTMLSelectElement).value = role.category;
+  (shadow.querySelector('#role-form-description') as HTMLInputElement).value = role.description;
+  (shadow.querySelector('#role-form-system-prompt') as HTMLTextAreaElement).value = role.systemPrompt;
+  (shadow.querySelector('#role-form-depth') as HTMLSelectElement).value = role.thinkingDepth;
+  (shadow.querySelector('#role-form-output-style') as HTMLInputElement).value = role.outputStyle;
+  (shadow.querySelector('#role-form-constraints') as HTMLTextAreaElement).value = role.constraints.join('\n');
+
+  // Update submit button text
+  const submitBtn = shadow.querySelector('#role-form-submit');
+  if (submitBtn) submitBtn.textContent = 'Update Role';
+
+  // Switch to create/edit tab
+  shadow.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+  shadow.querySelector('[data-tab="create-role"]')?.classList.add('active');
+  shadow.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
+  shadow.querySelector('#create-role')?.classList.add('active');
+}
+
+/**
+ * Handle duplicate role
+ */
+async function handleDuplicateRole(shadow: ShadowRoot, roleId: string): Promise<void> {
+  try {
+    const newRole = await duplicateRole(roleId);
+    if (newRole) {
+      showNotification(shadow, 'success', '✓ Role duplicated successfully!');
+      await loadRolesList(shadow);
+      await populateRoleDropdown(shadow);
+    }
+  } catch (error) {
+    console.error('Duplicate error:', error);
+    showNotification(shadow, 'error', 'Failed to duplicate role');
+  }
+}
+
+/**
+ * Handle delete role
+ */
+async function handleDeleteRole(shadow: ShadowRoot, roleId: string): Promise<void> {
+  if (!confirm('Are you sure you want to delete this role?')) return;
+
+  try {
+    const success = await deleteRole(roleId);
+    if (success) {
+      showNotification(shadow, 'success', '✓ Role deleted successfully!');
+      await loadRolesList(shadow);
+      await populateRoleDropdown(shadow);
+    } else {
+      showNotification(shadow, 'error', 'Cannot delete default roles');
+    }
+  } catch (error) {
+    console.error('Delete error:', error);
+    showNotification(shadow, 'error', 'Failed to delete role');
+  }
+}
+
+/**
+ * Handle role import from file
+ */
+async function handleRoleImport(shadow: ShadowRoot, file: File): Promise<void> {
+  const importStatus = shadow.querySelector('#import-status');
+  
+  try {
+    const text = await file.text();
+    const strategyInput = shadow.querySelector<HTMLInputElement>('input[name="import-strategy"]:checked');
+    const strategy = (strategyInput?.value || 'merge') as 'replace' | 'merge';
+
+    const result = await importRoles(text, strategy);
+
+    // Show status
+    if (importStatus) {
+      importStatus.classList.remove('hidden', 'error');
+      importStatus.classList.add('success');
+      importStatus.innerHTML = `
+        <strong>Import Complete!</strong><br>
+        Imported: ${result.imported} | Skipped: ${result.skipped}
+        ${result.errors.length > 0 ? `<br>Errors: ${result.errors.join(', ')}` : ''}
+      `;
+    }
+
+    // Refresh UI
+    await loadRolesList(shadow);
+    await populateRoleDropdown(shadow);
+
+    showNotification(shadow, 'success', `✓ Imported ${result.imported} roles!`);
+  } catch (error) {
+    console.error('Import error:', error);
+    if (importStatus) {
+      importStatus.classList.remove('hidden', 'success');
+      importStatus.classList.add('error');
+      importStatus.textContent = 'Failed to import roles. Please check the file format.';
+    }
+    showNotification(shadow, 'error', 'Failed to import roles');
+  }
+}
+
+/**
+ * Setup AI role suggestion toast
+ */
+function setupRoleSuggestion(shadow: ShadowRoot): void {
+  const addBtn = shadow.querySelector('#suggestion-add-btn');
+  const dismissBtn = shadow.querySelector('#suggestion-dismiss-btn');
+  const toast = shadow.querySelector('#role-suggestion-toast');
+
+  addBtn?.addEventListener('click', async () => {
+    if (currentSuggestedRole) {
+      try {
+        await createCustomRole(
+          currentSuggestedRole.name,
+          currentSuggestedRole.description,
+          generateSystemPromptFromSuggestion(currentSuggestedRole),
+          currentSuggestedRole.category,
+          {
+            thinkingDepth: 'medium',
+            outputStyle: 'Custom',
+            constraints: [],
+            emoji: ROLE_CATEGORIES[currentSuggestedRole.category]?.emoji || '📋',
+          }
+        );
+
+        showNotification(shadow, 'success', `✓ Added "${currentSuggestedRole.name}" role!`);
+        await populateRoleDropdown(shadow);
+        toast?.classList.add('hidden');
+        currentSuggestedRole = null;
+      } catch (error) {
+        console.error('Failed to add suggested role:', error);
+        showNotification(shadow, 'error', 'Failed to add role');
+      }
+    }
+  });
+
+  dismissBtn?.addEventListener('click', () => {
+    toast?.classList.add('hidden');
+    currentSuggestedRole = null;
+  });
+}
+
+/**
+ * Show AI role suggestion toast
+ */
+function showRoleSuggestion(shadow: ShadowRoot, suggestedRole: SuggestedRole): void {
+  currentSuggestedRole = suggestedRole;
+  
+  const toast = shadow.querySelector('#role-suggestion-toast');
+  const suggestionText = shadow.querySelector('#suggestion-text');
+  
+  if (suggestionText) {
+    suggestionText.textContent = `Add "${suggestedRole.name}" (${ROLE_CATEGORIES[suggestedRole.category]?.label || suggestedRole.category}) - ${suggestedRole.reason}`;
+  }
+  
+  toast?.classList.remove('hidden');
+
+  // Auto-dismiss after 15 seconds
+  setTimeout(() => {
+    toast?.classList.add('hidden');
+  }, 15000);
+}
+
+/**
+ * Generate a basic system prompt from a suggested role
+ */
+function generateSystemPromptFromSuggestion(suggestion: SuggestedRole): string {
+  return `You are an expert prompt engineer specializing in ${suggestion.name.toLowerCase()} tasks.
+
+Your goal is to transform rough prompts into well-structured prompts that:
+- ${suggestion.reason}
+- Provide clear, actionable guidance
+- Optimize for quality results in this domain
+
+Structure every enhanced prompt with these sections:
+1. ROLE: Define the AI's expertise and perspective
+2. OBJECTIVE: State the specific goal
+3. CONSTRAINTS: List requirements and limitations
+4. OUTPUT FORMAT: Specify the desired output structure
+
+Focus on clarity, precision, and domain-specific best practices.`;
 }
 
 /**

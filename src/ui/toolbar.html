@@ -1,4 +1,7 @@
 <!DOCTYPE html>
+<!-- Blur Overlay (shared for all modals/panels) -->
+<div id="promptlayer-overlay" class="overlay hidden" role="presentation" aria-hidden="true"></div>
+
 <div id="promptlayer-toolbar" data-theme="light" role="region" aria-label="PromptLayer Toolbar">
   <!-- Toggle Handle (shows when hidden) -->
   <div id="toggle-handle" class="toggle-handle hidden" aria-label="Show toolbar" title="Show toolbar">
@@ -11,11 +14,6 @@
   <div class="toolbar-header">
     <div class="toolbar-left">
       <span class="toolbar-title">PromptLayer</span>
-      <button id="collapse-btn" class="collapse-btn" aria-label="Collapse toolbar" title="Collapse">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-          <path d="M6 4l4 4-4 4V4z"/>
-        </svg>
-      </button>
     </div>
     <div class="toolbar-controls">
       <button id="toggle-input-btn" class="control-btn active" aria-label="Toggle input area" title="Toggle input">
@@ -24,6 +22,14 @@
           <rect x="14" y="3" width="7" height="7" rx="1"/>
           <rect x="3" y="14" width="7" height="7" rx="1"/>
           <rect x="14" y="14" width="7" height="7" rx="1"/>
+        </svg>
+      </button>
+      <button id="roles-btn" class="control-btn" aria-label="Manage roles" title="Manage Roles">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
         </svg>
       </button>
       <button id="library-btn" class="control-btn" aria-label="Open prompt library" title="Library (Ctrl+L)">
@@ -46,15 +52,38 @@
 
   <!-- Main Content -->
   <div class="toolbar-content">
-    <!-- Role Selector -->
+    <!-- Role Selector with Preview -->
     <div class="form-group">
-      <label for="role-select">Role Blueprint</label>
+      <div class="role-selector-header">
+        <label for="role-select">Role Blueprint</label>
+        <button id="role-preview-btn" class="btn-icon" aria-label="Preview role" title="Preview selected role">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
       <select id="role-select" aria-label="Select role blueprint">
-        <option value="engineer">🛠️ Engineer</option>
-        <option value="writer">✍️ Writer</option>
-        <option value="seo-aeo-geo">📊 SEO/AEO/GEO</option>
-        <option value="product-manager">📋 Product Manager</option>
+        <!-- Options populated dynamically -->
       </select>
+      <!-- Role Prompt Display -->
+      <div id="role-prompt-display" class="role-prompt-display">
+        <div class="role-prompt-label">System Prompt Preview</div>
+        <div id="role-prompt-text"></div>
+      </div>
+      <!-- Role Preview Tooltip -->
+      <div id="role-preview-tooltip" class="role-preview-tooltip hidden">
+        <div class="role-preview-header">
+          <span id="role-preview-emoji" class="role-emoji"></span>
+          <span id="role-preview-name" class="role-name"></span>
+          <span id="role-preview-category" class="role-category-badge"></span>
+        </div>
+        <p id="role-preview-description" class="role-description"></p>
+        <div class="role-preview-meta">
+          <span id="role-preview-depth"></span>
+          <span id="role-preview-style"></span>
+        </div>
+      </div>
     </div>
 
     <!-- Prompt Input -->
@@ -220,6 +249,167 @@
         <p class="library-empty-title">No saved prompts yet</p>
         <p class="library-empty-subtitle">Enhance and save prompts to build your personal library!</p>
         <a href="#" id="browse-community-btn" class="library-browse-link">Browse Community Prompts</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Role Manager Modal -->
+  <div id="role-manager-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="role-manager-title">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2 id="role-manager-title">Manage Role Blueprints</h2>
+        <button class="modal-close" id="role-manager-close" aria-label="Close role manager">&times;</button>
+      </div>
+      <div class="modal-body role-manager-body">
+        <!-- Role Manager Tabs -->
+        <div class="role-manager-tabs">
+          <button class="tab-btn active" data-tab="roles-list">All Roles</button>
+          <button class="tab-btn" data-tab="create-role">Create New</button>
+          <button class="tab-btn" data-tab="import-export">Import/Export</button>
+        </div>
+
+        <!-- Tab Content: Roles List -->
+        <div id="roles-list" class="tab-content active">
+          <div class="roles-filter-bar">
+            <input type="text" id="roles-search" placeholder="Search roles..." class="roles-search-input" />
+            <select id="roles-category-filter" aria-label="Filter by category">
+              <option value="">All Categories</option>
+              <option value="technical">🛠️ Technical</option>
+              <option value="creative">✨ Creative</option>
+              <option value="business">💼 Business</option>
+              <option value="marketing">📊 Marketing</option>
+              <option value="research">🔬 Research</option>
+              <option value="education">📚 Education</option>
+              <option value="other">📋 Other</option>
+            </select>
+          </div>
+          <div id="roles-list-content" class="roles-list-content">
+            <!-- Role cards populated dynamically -->
+          </div>
+        </div>
+
+        <!-- Tab Content: Create/Edit Role -->
+        <div id="create-role" class="tab-content">
+          <form id="role-form" class="role-form">
+            <input type="hidden" id="role-form-id" value="" />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="role-form-name">Role Name *</label>
+                <input type="text" id="role-form-name" required maxlength="50" placeholder="e.g., Data Analyst" />
+              </div>
+              <div class="form-group">
+                <label for="role-form-emoji">Emoji</label>
+                <input type="text" id="role-form-emoji" maxlength="4" placeholder="📊" class="emoji-input" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="role-form-category">Category *</label>
+              <select id="role-form-category" required>
+                <option value="">Select category...</option>
+                <option value="technical">🛠️ Technical</option>
+                <option value="creative">✨ Creative</option>
+                <option value="business">💼 Business</option>
+                <option value="marketing">📊 Marketing</option>
+                <option value="research">🔬 Research</option>
+                <option value="education">📚 Education</option>
+                <option value="other">📋 Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="role-form-description">Description *</label>
+              <input type="text" id="role-form-description" required maxlength="200" placeholder="Brief description of what this role specializes in" />
+            </div>
+            <div class="form-group">
+              <label for="role-form-system-prompt">System Prompt *</label>
+              <textarea id="role-form-system-prompt" required rows="8" placeholder="You are an expert prompt engineer specializing in...&#10;&#10;Your goal is to transform rough prompts into..."></textarea>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="role-form-depth">Thinking Depth</label>
+                <select id="role-form-depth">
+                  <option value="shallow">Shallow - Quick responses</option>
+                  <option value="medium" selected>Medium - Balanced</option>
+                  <option value="deep">Deep - Thorough analysis</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="role-form-output-style">Output Style</label>
+                <input type="text" id="role-form-output-style" maxlength="100" placeholder="e.g., Structured, analytical" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="role-form-constraints">Constraints (one per line)</label>
+              <textarea id="role-form-constraints" rows="4" placeholder="Remove ambiguous language&#10;Use specific terminology&#10;Include measurable criteria"></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="button" id="role-form-cancel" class="btn btn-secondary">Cancel</button>
+              <button type="submit" id="role-form-submit" class="btn btn-primary">Create Role</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Tab Content: Import/Export -->
+        <div id="import-export" class="tab-content">
+          <div class="import-export-section">
+            <h3>Export Roles</h3>
+            <p>Download your custom roles as a JSON file to share or backup.</p>
+            <div class="export-options">
+              <label class="checkbox-label">
+                <input type="checkbox" id="export-include-defaults" />
+                Include default roles
+              </label>
+            </div>
+            <button id="export-roles-btn" class="btn btn-primary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="7,10 12,15 17,10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Export Roles
+            </button>
+          </div>
+          <div class="import-export-divider"></div>
+          <div class="import-export-section">
+            <h3>Import Roles</h3>
+            <p>Import roles from a JSON file. Choose how to handle existing roles.</p>
+            <div class="import-options">
+              <label class="radio-label">
+                <input type="radio" name="import-strategy" value="merge" checked />
+                Merge with existing (rename duplicates)
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="import-strategy" value="replace" />
+                Replace all custom roles
+              </label>
+            </div>
+            <div class="file-upload-area" id="import-drop-zone">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="17,8 12,3 7,8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <p>Drag & drop JSON file here or</p>
+              <input type="file" id="import-file-input" accept=".json" class="hidden" />
+              <button type="button" id="import-browse-btn" class="btn btn-secondary btn-sm">Browse Files</button>
+            </div>
+            <div id="import-status" class="import-status hidden"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Role Suggestion Toast -->
+  <div id="role-suggestion-toast" class="suggestion-toast hidden" role="alert">
+    <div class="suggestion-toast-content">
+      <div class="suggestion-toast-icon">💡</div>
+      <div class="suggestion-toast-text">
+        <strong>AI Suggestion</strong>
+        <p id="suggestion-text">A specialized role might improve this prompt.</p>
+      </div>
+      <div class="suggestion-toast-actions">
+        <button id="suggestion-add-btn" class="btn btn-primary btn-sm">Add Role</button>
+        <button id="suggestion-dismiss-btn" class="btn-icon" aria-label="Dismiss">×</button>
       </div>
     </div>
   </div>

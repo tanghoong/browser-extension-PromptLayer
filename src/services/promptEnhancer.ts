@@ -3,10 +3,10 @@
  * Core logic for transforming rough prompts into structured, high-quality prompts
  */
 
-import type { EnhanceInput, EnhancedPrompt, ChatMessage } from '../types';
+import type { EnhanceInput, EnhancedPrompt, ChatMessage, SuggestedRole, RoleCategory } from '../types';
 import { ErrorType, PromptLayerError } from '../types';
 import { openAIClient } from './openaiClient';
-import { getRoleBlueprint } from './roleBlueprints';
+import { getRoleBlueprint, getAllRoleBlueprints } from './roleBlueprints';
 import { storageService } from './storage';
 
 /**
@@ -20,6 +20,7 @@ class PromptEnhancer {
     const lines = rawResponse.trim().split('\n');
     const sections: Record<string, string[]> = {};
     let currentSection = '';
+    let suggestedRole: SuggestedRole | undefined;
 
     // Parse sections
     for (const line of lines) {
@@ -28,13 +29,34 @@ class PromptEnhancer {
       // Check for section headers
       if (
         trimmed.match(
-          /^(ROLE|OBJECTIVE|CONSTRAINTS?|OUTPUT FORMAT|TONE & STYLE|KEYWORD STRATEGY|EEAT REQUIREMENTS|CONTENT STRUCTURE|CONTEXT|STAKEHOLDERS|SUCCESS CRITERIA):?$/i
+          /^(ROLE|OBJECTIVE|CONSTRAINTS?|OUTPUT FORMAT|TONE & STYLE|KEYWORD STRATEGY|EEAT REQUIREMENTS|CONTENT STRUCTURE|CONTEXT|STAKEHOLDERS|SUCCESS CRITERIA|SUGGESTED_ROLE):?$/i
         )
       ) {
         currentSection = trimmed.replace(':', '').toUpperCase();
         sections[currentSection] = [];
       } else if (trimmed && currentSection) {
         sections[currentSection].push(trimmed);
+      }
+    }
+
+    // Parse suggested role if present
+    if (sections['SUGGESTED_ROLE'] && sections['SUGGESTED_ROLE'].length > 0) {
+      try {
+        const suggestedRoleText = sections['SUGGESTED_ROLE'].join(' ');
+        const roleMatch = suggestedRoleText.match(
+          /name:\s*"?([^"]+)"?\s*\|\s*category:\s*(\w+)\s*\|\s*confidence:\s*([\d.]+)\s*\|\s*reason:\s*(.+)/i
+        );
+        if (roleMatch) {
+          suggestedRole = {
+            name: roleMatch[1].trim(),
+            description: roleMatch[4].trim(),
+            category: (roleMatch[2].toLowerCase() as RoleCategory) || 'other',
+            confidence: parseFloat(roleMatch[3]),
+            reason: roleMatch[4].trim(),
+          };
+        }
+      } catch {
+        // Ignore parsing errors for suggested role
       }
     }
 
@@ -66,15 +88,27 @@ class PromptEnhancer {
       objective,
       constraints,
       outputFormat,
-      fullText: rawResponse,
+      fullText: rawResponse.replace(/SUGGESTED_ROLE:[\s\S]*?(?=\n\n|$)/i, '').trim(),
+      suggestedRole,
     };
   }
 
   /**
    * Build enhancement system message
    */
-  private buildSystemMessage(roleId: string): string {
-    const blueprint = getRoleBlueprint(roleId);
+  private async buildSystemMessage(roleId: string, availableRoles: string[]): Promise<string> {
+    const blueprint = await getRoleBlueprint(roleId);
+
+    const roleSuggestionInstructions = `
+
+ROLE SUGGESTION (only if confidence > 50%):
+If the user's prompt would be better served by a specialized role NOT in the available roles list below, add a SUGGESTED_ROLE section at the very end of your response in this exact format:
+SUGGESTED_ROLE:
+name: "Role Name" | category: technical|creative|business|marketing|research|education|other | confidence: 0.XX | reason: Brief explanation why this role would be better suited
+
+Available roles: ${availableRoles.join(', ')}
+
+Only suggest a new role if you're at least 50% confident it would significantly improve the prompt enhancement. Do not suggest if an existing role is adequate.`;
 
     if (!blueprint) {
       // Fallback to generic enhancement if role not found
@@ -86,10 +120,10 @@ Structure your response with these sections:
 - CONSTRAINTS: List requirements and limitations
 - OUTPUT FORMAT: Specify the desired output structure
 
-Be precise, remove ambiguity, and optimize for quality results.`;
+Be precise, remove ambiguity, and optimize for quality results.${roleSuggestionInstructions}`;
     }
 
-    return blueprint.systemPrompt;
+    return blueprint.systemPrompt + roleSuggestionInstructions;
   }
 
   /**
@@ -132,8 +166,12 @@ Be precise, remove ambiguity, and optimize for quality results.`;
     }
 
     try {
+      // Get available role names for suggestion context
+      const allRoles = await getAllRoleBlueprints();
+      const availableRoleNames = allRoles.map((r) => r.name);
+
       // Build messages
-      const systemMessage = this.buildSystemMessage(input.roleId);
+      const systemMessage = await this.buildSystemMessage(input.roleId, availableRoleNames);
       const userMessage = this.buildUserMessage(input);
 
       const messages: ChatMessage[] = [

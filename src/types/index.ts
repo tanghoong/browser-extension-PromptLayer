@@ -29,6 +29,18 @@ export interface PromptVersion {
 }
 
 /**
+ * Role categories for organization
+ */
+export type RoleCategory =
+  | 'technical'
+  | 'creative'
+  | 'business'
+  | 'marketing'
+  | 'research'
+  | 'education'
+  | 'other';
+
+/**
  * Role blueprint for prompt enhancement
  */
 export interface RoleBlueprint {
@@ -41,6 +53,21 @@ export interface RoleBlueprint {
   constraints: string[];
   isDefault: boolean;
   isEditable: boolean;
+  category: RoleCategory;
+  emoji?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/**
+ * AI-suggested role from enhancement
+ */
+export interface SuggestedRole {
+  name: string;
+  description: string;
+  category: RoleCategory;
+  confidence: number; // 0-1
+  reason: string;
 }
 
 /**
@@ -57,6 +84,7 @@ export interface EnhancedPrompt {
     temperature: number;
     tokensUsed?: number;
   };
+  suggestedRole?: SuggestedRole;
 }
 
 /**

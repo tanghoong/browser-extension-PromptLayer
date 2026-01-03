@@ -5,6 +5,7 @@
 
 import type { Prompt, ExtensionSettings, RoleBlueprint, UsageStats } from '../types';
 import { StorageKey, ErrorType, PromptLayerError } from '../types';
+import { logger } from '../utils/logger';
 
 /**
  * Default settings for the extension
@@ -41,6 +42,20 @@ class StorageService {
   private saveOperationTimestamps: number[] = [];
   private readonly MAX_SAVES_PER_MINUTE = 30;
   private readonly RATE_LIMIT_WINDOW = 60000; // 1 minute
+  private cachedKey: CryptoKey | null = null;
+
+  /**
+   * Ensure Web Crypto API is available
+   */
+  private ensureCryptoAvailable(): void {
+    if (!crypto?.subtle) {
+      throw new PromptLayerError(
+        ErrorType.UNKNOWN_ERROR,
+        'Crypto API unavailable',
+        'Your browser does not support secure encryption. Please use a modern browser.'
+      );
+    }
+  }
 
   /**
    * Check rate limiting for storage write operations
@@ -68,57 +83,173 @@ class StorageService {
   }
 
   /**
-   * Encrypt a string (API keys) using XOR with a derived key
-   * Note: This provides basic obfuscation. For production use,
-   * consider using Web Crypto API or chrome.storage.session for better security.
-   * The XOR cipher here is vulnerable to known-plaintext attacks.
+   * Encrypt a string (API keys) using AES-GCM via Web Crypto API
+   * This provides strong encryption for sensitive data like API keys
    */
-  private encrypt(value: string): string {
-    // Use a combination of extension ID and a salt for key derivation
-    // Note: In a production environment, use crypto.getRandomValues() for the salt
-    const salt = 'promptlayer-2024';
-    const extensionId = chrome.runtime.id || 'default';
-    const key = `${extensionId}-${salt}`;
+  private async encrypt(value: string): Promise<string> {
+    this.ensureCryptoAvailable();
+    
+    try {
+      // Generate a random encryption key from extension ID
+      const extensionId = chrome.runtime.id || 'default-extension-id';
+      const keyMaterial = await this.getKeyMaterial(extensionId);
 
-    // XOR encryption with rotating key, keeping values in 8-bit range
-    let encrypted = '';
-    for (let i = 0; i < value.length; i++) {
-      const keyChar = key.charCodeAt(i % key.length);
-      const valueChar = value.charCodeAt(i);
-      // Use bitwise AND with 0xFF to ensure result stays within Latin1 range (0-255)
-      encrypted += String.fromCharCode((valueChar ^ keyChar) & 0xff);
+      // Generate a random IV (initialization vector)
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+
+      // Encrypt the data
+      const encoder = new TextEncoder();
+      const data = encoder.encode(value);
+      const encryptedData = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, keyMaterial, data);
+
+      // Combine IV and encrypted data
+      const combined = new Uint8Array(iv.length + encryptedData.byteLength);
+      combined.set(iv);
+      combined.set(new Uint8Array(encryptedData), iv.length);
+
+      // Convert to base64 for storage
+      return this.arrayBufferToBase64(combined);
+    } catch (error) {
+      logger.error('Encryption failed:', error);
+      throw new PromptLayerError(
+        ErrorType.UNKNOWN_ERROR,
+        'Failed to encrypt data',
+        'Could not secure your API key. Please try again.'
+      );
     }
-
-    // Base64 encode to make it storable
-    return btoa(encrypted);
   }
 
   /**
-   * Decrypt a string
+   * Decrypt a string encrypted with AES-GCM
    */
-  private decrypt(value: string): string {
+  private async decrypt(value: string): Promise<string> {
     try {
-      // Base64 decode first
-      const decoded = atob(value);
+      // Convert base64 back to array buffer
+      const combined = this.base64ToArrayBuffer(value);
 
-      // Use same key derivation
+      // Extract IV and encrypted data
+      const iv = combined.slice(0, 12);
+      const encryptedData = combined.slice(12);
+
+      // Get encryption key
+      const extensionId = chrome.runtime.id || 'default-extension-id';
+      const keyMaterial = await this.getKeyMaterial(extensionId);
+
+      // Decrypt the data
+      const decryptedData = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        keyMaterial,
+        encryptedData
+      );
+
+      // Convert back to string
+      const decoder = new TextDecoder();
+      return decoder.decode(decryptedData);
+    } catch (error) {
+      // Try legacy XOR decryption for backward compatibility
+      try {
+        return this.decryptLegacyXOR(value);
+      } catch (legacyError) {
+        // Both decryption methods failed - throw error instead of returning raw value
+        logger.error('Decryption failed:', error);
+        throw new PromptLayerError(
+          ErrorType.UNKNOWN_ERROR,
+          'Failed to decrypt data',
+          'Could not decrypt your API key. Please re-enter it in settings.'
+        );
+      }
+    }
+  }
+
+  /**
+   * Legacy XOR decryption for backward compatibility
+   */
+  private decryptLegacyXOR(value: string): string {
+    try {
+      const decoded = atob(value);
       const salt = 'promptlayer-2024';
       const extensionId = chrome.runtime.id || 'default';
       const key = `${extensionId}-${salt}`;
 
-      // XOR decryption (same operation as encryption for XOR, with 8-bit masking)
       let decrypted = '';
       for (let i = 0; i < decoded.length; i++) {
         const keyChar = key.charCodeAt(i % key.length);
         const valueChar = decoded.charCodeAt(i);
-        // Use bitwise AND with 0xFF to ensure result stays within valid range
         decrypted += String.fromCharCode((valueChar ^ keyChar) & 0xff);
       }
-
       return decrypted;
     } catch {
-      return value; // Return as-is if decryption fails (backward compatibility)
+      throw new Error('Legacy decryption failed');
     }
+  }
+
+  /**
+   * Derive a cryptographic key from extension ID
+   * Note: The encryption key is derived only from the extension ID without user-specific secrets.
+   * This means the same extension ID produces the same key across all users.
+   * For enhanced security, consider incorporating user-specific secrets or using chrome.storage.session.
+   * The key is cached in memory for performance after first derivation.
+   */
+  private async getKeyMaterial(password: string): Promise<CryptoKey> {
+    // Return cached key if available to avoid expensive PBKDF2 computation
+    if (this.cachedKey) {
+      return this.cachedKey;
+    }
+
+    const encoder = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(password.padEnd(32, '0').slice(0, 32)),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveBits', 'deriveKey']
+    );
+
+    const derivedKey = await crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: encoder.encode('promptlayer-salt-v1'),
+        iterations: 100000,
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+
+    // Cache the derived key for performance
+    this.cachedKey = derivedKey;
+    return derivedKey;
+  }
+
+  /**
+   * Convert ArrayBuffer to base64 string
+   * Uses chunked conversion to avoid inefficient per-byte concatenation
+   * and potential stack issues with very large arrays
+   */
+  private arrayBufferToBase64(buffer: Uint8Array): string {
+    const chunkSize = 0x8000; // 32KB chunks
+    const chunks: string[] = [];
+    for (let i = 0; i < buffer.length; i += chunkSize) {
+      const chunk = buffer.subarray(i, i + chunkSize);
+      chunks.push(String.fromCharCode(...chunk));
+    }
+    const binary = chunks.join('');
+    return btoa(binary);
+  }
+
+  /**
+   * Convert base64 string to ArrayBuffer
+   */
+  private base64ToArrayBuffer(base64: string): Uint8Array {
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
   }
 
   /**
@@ -128,9 +259,9 @@ class StorageService {
     try {
       const result = await chrome.storage.local.get(StorageKey.API_KEY);
       const encryptedKey = result[StorageKey.API_KEY];
-      return encryptedKey ? this.decrypt(encryptedKey) : null;
+      return encryptedKey ? await this.decrypt(encryptedKey) : null;
     } catch (error) {
-      console.error('Error getting API key:', error);
+      logger.error('Error getting API key:', error);
       return null;
     }
   }
@@ -141,11 +272,11 @@ class StorageService {
   async setApiKey(apiKey: string): Promise<void> {
     try {
       this.checkWriteRateLimit();
-      const encrypted = this.encrypt(apiKey);
+      const encrypted = await this.encrypt(apiKey);
       await chrome.storage.local.set({ [StorageKey.API_KEY]: encrypted });
     } catch (error) {
       if (error instanceof PromptLayerError) throw error;
-      console.error('Error setting API key:', error);
+      logger.error('Error setting API key:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
         'Failed to save API key',
@@ -161,7 +292,7 @@ class StorageService {
     try {
       await chrome.storage.local.remove(StorageKey.API_KEY);
     } catch (error) {
-      console.error('Error clearing API key:', error);
+      logger.error('Error clearing API key:', error);
     }
   }
 
@@ -174,7 +305,7 @@ class StorageService {
       const settings = result[StorageKey.SETTINGS];
       return settings ? { ...DEFAULT_SETTINGS, ...settings } : DEFAULT_SETTINGS;
     } catch (error) {
-      console.error('Error getting settings:', error);
+      logger.error('Error getting settings:', error);
       return DEFAULT_SETTINGS;
     }
   }
@@ -190,7 +321,7 @@ class StorageService {
       await chrome.storage.local.set({ [StorageKey.SETTINGS]: newSettings });
     } catch (error) {
       if (error instanceof PromptLayerError) throw error;
-      console.error('Error updating settings:', error);
+      logger.error('Error updating settings:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
         'Failed to update settings',
@@ -207,7 +338,7 @@ class StorageService {
       const result = await chrome.storage.local.get(StorageKey.PROMPTS);
       return result[StorageKey.PROMPTS] || [];
     } catch (error) {
-      console.error('Error getting prompts:', error);
+      logger.error('Error getting prompts:', error);
       return [];
     }
   }
@@ -243,7 +374,7 @@ class StorageService {
       await chrome.storage.local.set({ [StorageKey.PROMPTS]: prompts });
     } catch (error) {
       if (error instanceof PromptLayerError) throw error;
-      console.error('Error saving prompt:', error);
+      logger.error('Error saving prompt:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
         'Failed to save prompt',
@@ -273,7 +404,7 @@ class StorageService {
       await chrome.storage.local.set({ [StorageKey.PROMPTS]: prompts });
     } catch (error) {
       if (error instanceof PromptLayerError) throw error;
-      console.error('Error updating prompt:', error);
+      logger.error('Error updating prompt:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
         'Failed to update prompt',
@@ -293,7 +424,7 @@ class StorageService {
       await chrome.storage.local.set({ [StorageKey.PROMPTS]: filtered });
     } catch (error) {
       if (error instanceof PromptLayerError) throw error;
-      console.error('Error deleting prompt:', error);
+      logger.error('Error deleting prompt:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
         'Failed to delete prompt',
@@ -310,7 +441,7 @@ class StorageService {
       const result = await chrome.storage.local.get(StorageKey.ROLES);
       return result[StorageKey.ROLES] || [];
     } catch (error) {
-      console.error('Error getting roles:', error);
+      logger.error('Error getting roles:', error);
       return [];
     }
   }
@@ -322,7 +453,7 @@ class StorageService {
     try {
       await chrome.storage.local.set({ [StorageKey.ROLES]: roles });
     } catch (error) {
-      console.error('Error saving roles:', error);
+      logger.error('Error saving roles:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
         'Failed to save roles',
@@ -339,7 +470,7 @@ class StorageService {
       const result = await chrome.storage.local.get(StorageKey.STATS);
       return result[StorageKey.STATS] || DEFAULT_STATS;
     } catch (error) {
-      console.error('Error getting stats:', error);
+      logger.error('Error getting stats:', error);
       return DEFAULT_STATS;
     }
   }
@@ -353,7 +484,7 @@ class StorageService {
       const newStats = { ...currentStats, ...updates };
       await chrome.storage.local.set({ [StorageKey.STATS]: newStats });
     } catch (error) {
-      console.error('Error updating stats:', error);
+      logger.error('Error updating stats:', error);
     }
   }
 
@@ -364,7 +495,7 @@ class StorageService {
     try {
       await chrome.storage.local.set({ [StorageKey.STATS]: DEFAULT_STATS });
     } catch (error) {
-      console.error('Error resetting stats:', error);
+      logger.error('Error resetting stats:', error);
     }
   }
 
@@ -383,7 +514,7 @@ class StorageService {
         percentage,
       };
     } catch (error) {
-      console.error('Error getting storage quota:', error);
+      logger.error('Error getting storage quota:', error);
       return { used: 0, available: 0, percentage: 0 };
     }
   }
@@ -411,7 +542,7 @@ class StorageService {
 
       return JSON.stringify(exportData, null, 2);
     } catch (error) {
-      console.error('Error exporting data:', error);
+      logger.error('Error exporting data:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
         'Failed to export data',
@@ -459,7 +590,7 @@ class StorageService {
 
       return { promptsImported, rolesImported };
     } catch (error) {
-      console.error('Error importing data:', error);
+      logger.error('Error importing data:', error);
       throw new PromptLayerError(
         ErrorType.INVALID_INPUT,
         'Failed to import data',

@@ -3,11 +3,18 @@
  * Core logic for transforming rough prompts into structured, high-quality prompts
  */
 
-import type { EnhanceInput, EnhancedPrompt, ChatMessage, SuggestedRole, RoleCategory } from '../types';
+import type {
+  EnhanceInput,
+  EnhancedPrompt,
+  ChatMessage,
+  SuggestedRole,
+  RoleCategory,
+} from '../types';
 import { ErrorType, PromptLayerError } from '../types';
 import { openAIClient } from './openaiClient';
 import { getRoleBlueprint, getAllRoleBlueprints } from './roleBlueprints';
 import { storageService } from './storage';
+import { logger } from '../utils/logger';
 
 /**
  * Prompt enhancer class
@@ -211,7 +218,7 @@ Be precise, remove ambiguity, and optimize for quality results.${roleSuggestionI
         throw error;
       }
 
-      console.error('Enhancement failed:', error);
+      logger.error('Enhancement failed:', error);
       throw new PromptLayerError(
         ErrorType.UNKNOWN_ERROR,
         'Enhancement failed',
@@ -222,9 +229,9 @@ Be precise, remove ambiguity, and optimize for quality results.${roleSuggestionI
 
   /**
    * Get estimated tokens for a prompt
+   * Simple calculation: ~4 characters per token
    */
   estimateTokens(text: string): number {
-    // Rough estimation: ~4 characters per token
     return Math.ceil(text.length / 4);
   }
 
